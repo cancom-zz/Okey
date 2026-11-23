@@ -1,6 +1,6 @@
 // The lobby: four seats around a felt table. The host adds bots, sets the clock, starts. Seats fill live.
 import { t } from './i18n.js';
-import { TURN_OPTIONS, ROUND_OPTIONS, BOT_AVATAR } from './config.js';
+import { TURN_OPTIONS, ROUND_OPTIONS, ROUND_OPTIONS_101, BOT_AVATAR, VARIANTS, RULES_101 } from './config.js';
 import { $, $$, esc, toast, copyText } from './ui.js';
 import { openBotPicker } from './sheets.js';
 import { sfx } from './sound.js';
@@ -57,12 +57,17 @@ export class LobbyScreen {
     });
     const full = view.seats.every(s => s.kind !== 'empty');
     const st = view.settings || {};
+    const is101 = st.variant === '101';
     const ctl = $('#lCtl', this.root);
     if (isHost) {
       ctl.innerHTML = `<div class="opt"><span>${t('lobby.turnTime')}</span><div class="seg sm" id="lTurn">${TURN_OPTIONS.map(s => `<button data-v="${s}" class="${st.turnSeconds === s ? 'on' : ''}">${s}${t('unit.sec')}</button>`).join('')}</div></div>
-        <div class="opt"><span>${t('lobby.length')}</span><div class="seg sm" id="lRounds">${ROUND_OPTIONS.map(r => `<button data-v="${r}" class="${(st.rounds || 0) === r ? 'on' : ''}">${r ? t('lobby.rounds', { n: r }) : t('lobby.toZero')}</button>`).join('')}</div></div>
+        <div class="opt"><span>${t('lobby.variant')}</span><div class="seg sm" id="lVar">${VARIANTS.map(x => `<button data-v="${x}" class="${(st.variant || 'classic') === x ? 'on' : ''}">${t('variant.' + x)}</button>`).join('')}</div></div>
+        <div class="opt"><span>${t('lobby.length')}</span><div class="seg sm" id="lRounds">${(is101 ? ROUND_OPTIONS_101 : ROUND_OPTIONS).map(r => `<button data-v="${r}" class="${(st.rounds || 0) === r ? 'on' : ''}">${r ? (is101 ? String(r) : t('lobby.rounds', { n: r })) : t('lobby.toZero')}</button>`).join('')}</div></div>
+        ${is101 ? `<div class="opt rules"><span>${t('lobby.rules101')}</span><div class="toggles" id="lRules">${RULES_101.map(k => `<button data-k="${k}" class="tg ${st[k] ? 'on' : ''}" aria-pressed="${!!st[k]}">${t('rule.' + k)}</button>`).join('')}</div></div>` : ''}
         <div class="row"><button class="btn" id="lLeave">${t('lobby.leave')}</button><button class="btn gold" id="lStart" ${full ? '' : 'disabled'}>${full ? t('lobby.start') : t('lobby.needFour', { n: view.seats.filter(s => s.kind === 'empty').length })}</button></div>`;
       $('#lTurn', ctl).onclick = e => { const b = e.target.closest('button'); if (b) this.ctx.send({ t: 'settings', settings: { turnSeconds: +b.dataset.v } }); };
+      $('#lVar', ctl).onclick = e => { const b = e.target.closest('button'); if (b) this.ctx.send({ t: 'settings', settings: { variant: b.dataset.v } }); };
+      const rl = $('#lRules', ctl); if (rl) rl.onclick = e => { const b = e.target.closest('button'); if (b) this.ctx.send({ t: 'settings', settings: { [b.dataset.k]: !st[b.dataset.k] } }); };
       $('#lRounds', ctl).onclick = e => { const b = e.target.closest('button'); if (b) this.ctx.send({ t: 'settings', settings: { rounds: +b.dataset.v } }); };
       $('#lStart', ctl).onclick = () => { sfx('clack'); this.ctx.send({ t: 'start' }); };
     } else {

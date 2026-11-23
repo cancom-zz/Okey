@@ -27,7 +27,7 @@ export function openSettings(onChange) {
   wireSeg('sSpeed', v => { S.settings.speed = v; save(); });
   $('#sFelt').onclick = e => { const b = e.target.closest('button'); if (!b) return; S.settings.felt = b.dataset.v; save(); applyFelt(); $$('#sFelt button').forEach(x => x.classList.toggle('on', x === b)); sfx('tick'); };
   $('#sProfile').onclick = () => openProfile(false, () => { onChange && onChange('profile'); });
-  $('#sRules').onclick = openRules; $('#sAbout').onclick = openAbout; $('#sTip').onclick = openTip;
+  $('#sRules').onclick = () => openRules(); $('#sAbout').onclick = openAbout; $('#sTip').onclick = openTip;
 }
 
 export function openProfile(first, done) {
@@ -50,8 +50,10 @@ export function openProfile(first, done) {
 }
 const defaultName = () => t('profile.default') + ' ' + Math.floor(100 + Math.random() * 900);
 
-export function openRules() {
-  sheet(`<h2>${t('rules.title')}</h2><div class="rules">${t('rules.html')}</div>`, { cls: 'tall' });
+export function openRules(variant = 'classic') {
+  sheet(`<h2>${t('rules.title')}</h2><div class="seg sm rtabs" id="rTabs"><button data-v="classic" class="${variant !== '101' ? 'on' : ''}">${t('rules.tabClassic')}</button><button data-v="101" class="${variant === '101' ? 'on' : ''}">${t('rules.tab101')}</button></div>
+    <div class="rules" id="rBody">${t(variant === '101' ? 'rules101.html' : 'rules.html')}</div>`, { cls: 'tall' });
+  wireSeg('rTabs', v => { $('#rBody').innerHTML = t(v === '101' ? 'rules101.html' : 'rules.html'); $('#rBody').scrollTop = 0; });
 }
 
 const ACH = ['ilk_zafer', 'okey_atan', 'ciftci', 'cifte_okey', 'gostergeci', 'seri_5', 'usta_avcisi', 'hizli_el', 'yuz_el', 'dost_masasi'];

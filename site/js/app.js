@@ -17,6 +17,8 @@ const screen = () => $('#screen');
 // Practice has no turn clock. ?points=N&rounds=N (dev/tests) make a short practice match.
 function soloSettings() {
   const q = new URLSearchParams(location.search), st = { turnSeconds: 0 };
+  const variant = q.get('variant') || S.settings.soloVariant;
+  if (variant === '101') st.variant = '101';
   const pts = +q.get('points'), rounds = +q.get('rounds');
   if (pts >= 1 && pts <= 99) st.startPoints = pts;
   if (rounds >= 1 && rounds <= 99) st.rounds = rounds;
@@ -166,13 +168,16 @@ function topbar() {
   $('#brand').textContent = t('brand');
 }
 
+// Read-only peek at this player's own view (what the server already sent): handy in the console and for tests.
+window.__okey = { view: () => (room && room.view ? JSON.parse(JSON.stringify(room.view)) : null) };
+
 function boot() {
   applyFelt();
   applyStatic();
   $('#tBack').onclick = () => leave(true);
   $('#brand').onclick = () => { if (!room) return; leave(true); };
   $('#tSound').onclick = () => { setSound(!S.settings.sound); topbar(); };
-  $('#tRules').onclick = openRules;
+  $('#tRules').onclick = () => openRules(room && room.view && room.view.settings ? room.view.settings.variant : S.settings.soloVariant);
   $('#tStats').onclick = openStats;
   $('#tSet').onclick = () => openSettings(what => { if (what === 'lang' || what === 'profile') { /* re-render below */ } });
   $('#tTip').onclick = openTip;

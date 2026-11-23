@@ -12,7 +12,7 @@ function defaults() {
     secret: uuid(),
     name: '',
     avatar: AVATARS[Math.floor(Math.random() * 8)],
-    settings: { lang: '', sound: true, speed: 'normal', felt: 'green', soloLevel: 'kalfa', hints: true },
+    settings: { lang: '', sound: true, speed: 'normal', felt: 'green', soloLevel: 'kalfa', soloVariant: 'classic', hints: true },
     tip: { play: 0, at: 0, next: 0, went: 0, done: false },
     stats: {
       practice: { rounds: 0, won: 0, matches: 0, matchesWon: 0, finishes: { sets: 0, pairs: 0, okey: 0, pairsOkey: 0 }, shown: 0, streak: 0, bestStreak: 0 },
@@ -41,6 +41,7 @@ function sanitize(raw) {
   if (st.speed in SPEEDS) s.settings.speed = st.speed;
   if (FELTS.includes(st.felt)) s.settings.felt = st.felt;
   if (LEVELS.includes(st.soloLevel)) s.settings.soloLevel = st.soloLevel;
+  if (st.soloVariant === 'classic' || st.soloVariant === '101') s.settings.soloVariant = st.soloVariant;
   if (typeof st.hints === 'boolean') s.settings.hints = st.hints;
   const tp = raw.tip || {};
   for (const k of ['play', 'at', 'next', 'went']) s.tip[k] = n0(tp[k]);

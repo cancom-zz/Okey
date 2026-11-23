@@ -10,6 +10,8 @@
 //   throws: per seat, faces it discarded (what it does not need)
 //   passed: per seat, faces it saw on top of its left stack and did not take
 // The bot's own discards are remembered a little better (people remember what they threw).
+// Variant-neutral: classic `draw` from the discard and 101 `take` / `undoTake` are both understood; a variant
+// passes any other face-up tiles (101 table melds) to liveTable.
 
 import { faceIndex, WILD } from './faces.js';
 
@@ -71,6 +73,18 @@ export class Memory {
         this.endTurn();
         break;
       }
+      case 'take':                                  // 101: taking the discard is its own event
+        this.observe({ type: 'draw', seat: e.seat, from: 'discard', tile: e.tile });
+        break;
+      case 'undoTake': {                            // 101: the take went back on the stack
+        const left = (e.seat + 3) % 4;
+        if (this.gone.get(e.tile)?.kind === 'held') this.gone.delete(e.tile);
+        const picks = this.picks[e.seat];
+        const i = picks.lastIndexOf(e.tile);
+        if (i >= 0) picks.splice(i, 1);
+        this.tops[left] = e.tile;
+        break;
+      }
       case 'draw': {
         const left = (e.seat + 3) % 4;
         if (e.seat === this.you) break;            // own hand is in the view
@@ -108,8 +122,8 @@ export class Memory {
   }
 
   // live[f]: copies of face f the bot believes may still come its way (0..2).
-  // hand: own tile ids; view: its seat's view (tops of the four stacks, indicator).
-  liveTable(hand, view) {
+  // hand: own tile ids; view: its seat's view (tops of the four stacks, indicator); visible: other face-up ids.
+  liveTable(hand, view, visible = []) {
     const okey = view.round.okey;
     const goneCount = new Int8Array(53);
     const seen = new Set();
@@ -122,6 +136,7 @@ export class Memory {
     count(view.round.indicator);
     const seats = view.seats;
     for (let s = 0; s < 4; s++) count(seats[s].discard.top);
+    for (const id of visible) count(id);          // e.g. 101 table melds
     for (const id of this.gone.keys()) count(id);
     const live = new Int8Array(52);
     for (let f = 0; f < 52; f++) live[f] = Math.max(0, 2 - goneCount[f]);

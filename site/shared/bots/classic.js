@@ -6,16 +6,15 @@
 
 import { finishOptions, findFinish } from '../okey/rules.js';
 import { otherCopy } from '../okey/tiles.js';
-import { FACES, WILD, faceIndex, handVector, faceColor, faceNum, okeyFaceIndex, runNeighbors, groupNeighbors } from './faces.js';
+import { FACES, WILD, faceIndex, handVector, faceColor, faceNum, okeyFaceIndex } from './faces.js';
 import { makeContext, evaluate, expectedDrawGain } from './evaluate.js';
+import { dangerFn, DEFENSE_CAP } from './defense.js';
 
 const BLUNDER_MARGIN = 1.0;   // a blunder only picks a move at most this much worse (stays plausible:
                               // breaks a partial or keeps a weaker tile, never breaks a complete set)
-const DEFENSE_CAP = 0.5;      // defense never outweighs breaking a complete set (or a good partial)
-const DEFENSE_BONUS_CAP = 0.2; // how much a known-safe tile is preferred
 const DEEP_CANDIDATES = 4;    // lookahead 3: discards that get the one-draw look-ahead
 const DEEP_WINDOW = 0.5;      // lookahead 3: only discards within this much of the best get the look-ahead
-const IRRELEVANT = BLUNDER_MARGIN + DEFENSE_CAP + 0.5;
+const IRRELEVANT = BLUNDER_MARGIN + DEFENSE_CAP + 0.5; // DEFENSE_CAP from defense.js
 
 const finishPoints = (o) => (o.kind === 'pairs' ? 4 : 2) * (o.okeyFinish ? 2 : 1);
 
@@ -65,50 +64,6 @@ function rankDiscards(hand, view, ctx, danger, exclude, deep = ctx.lookahead >= 
   for (const x of out) x.score = x.value - (danger ? danger(faceIndex(x.tile, okey)) : 0);
   out.sort((a, b) => b.score - a.score);
   return out;
-}
-
-// Defense: how much the next player (on our right, who may take our discard) seems to want face f,
-// judged only from remembered pickups, passes and throws of that player. Relative: an unremarkable tile
-// costs nothing, a tile next to what they picked up costs more, a tile they already passed on or threw is
-// slightly preferred. It grows as the pile shrinks and as they pick up more.
-function dangerFn(view, mem, params, live) {
-  if (!(params.defense > 0)) return null;
-  const okey = view.round.okey;
-  const nextSeat = (view.you + 1) % 4;
-  const picks = mem.facesOf(mem.picks[nextSeat], okey);
-  const passed = mem.facesOf(mem.passed[nextSeat], okey);
-  const throws = mem.facesOf(mem.throws[nextSeat], okey);
-  const pileLeft = Math.max(0, Math.min(1, view.round.pileCount / 48));
-  const urgency = Math.min(1.3, 0.3 + 0.7 * (1 - pileLeft) + 0.1 * picks.length);
-  const runDist = (a, b) => {
-    if (faceColor(a) !== faceColor(b)) return 99;
-    const x = faceNum(a), y = faceNum(b);
-    return Math.min(Math.abs(x - y), Math.abs((x === 1 ? 14 : x) - y), Math.abs(x - (y === 1 ? 14 : y)));
-  };
-  const cache = new Map();
-  return (f) => {
-    if (cache.has(f)) return cache.get(f);
-    let want = 0;
-    for (const g of picks) {
-      const rd = runDist(f, g);
-      if (g === f) want += 0.1;
-      else if (rd === 1) want += 0.5;
-      else if (rd === 2) want += 0.25;
-      else if (faceNum(g) === faceNum(f)) want += 0.4;
-    }
-    // A tile with no live neighbours is hard for anyone to use.
-    let conn = 0;
-    for (const { f: g, d: dist } of runNeighbors(f)) if (dist === 1) conn += live[g];
-    for (const g of groupNeighbors(f)) conn += live[g];
-    if (conn === 0) want *= 0.3;
-    let safe = 0;
-    if (passed.includes(f)) safe += 0.3;
-    if (throws.includes(f)) safe += 0.2;
-    const pen = params.defense * urgency * 0.6 * (want - safe);
-    const out = Math.max(-DEFENSE_BONUS_CAP, Math.min(DEFENSE_CAP, pen));
-    cache.set(f, out);
-    return out;
-  };
 }
 
 /** A tile id with face f that is not in `hand` (for "what if I drew f" checks). */
@@ -165,7 +120,7 @@ export function plan(view, mem, params, rng, st) {
 
   const live = mem.liveTable(hand, view);
   const ctx = makeContext(live, params);
-  const danger = dangerFn(view, mem, params, live);
+  const danger = dangerFn(view, mem, params, live, { pileStart: 48 });
 
   if (r.stage === 'draw') {
     const left = (you + 3) % 4;

@@ -36,8 +36,8 @@ export function handGroupsHTML(view) {
   return r.groups.map(g => `<div class="rg">${g.map(id => tileHTML(id, okey, 'rv')).join('')}</div>`).join('');
 }
 
-export function podiumHTML(view) {
-  const order = view.seats.map((s, i) => ({ s, i, score: s.score })).sort((a, b) => b.score - a.score);
+export function podiumHTML(view, lowWins = false) {
+  const order = view.seats.map((s, i) => ({ s, i, score: s.score })).sort((a, b) => (lowWins ? a.score - b.score : b.score - a.score));
   let place = 0, prev = null;
   order.forEach((o, k) => { if (o.score !== prev) place = k; o.place = place; prev = o.score; });
   const medal = ['🥇', '🥈', '🥉', ''];

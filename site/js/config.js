@@ -45,6 +45,10 @@ export const EMOTES = [
 
 export const TURN_OPTIONS = [15, 30, 45, 60];
 export const ROUND_OPTIONS = [0, 3, 5, 10];   // 0 = play until a score reaches 0
+export const ROUND_OPTIONS_101 = [1, 3, 5, 7, 9, 11];   // 101: always a fixed number of rounds
+export const VARIANTS = ['classic', '101'];
+// 101 house rules offered as toggles in the lobby (all are host settings flags)
+export const RULES_101 = ['pairsOpening', 'okeySwap', 'raiseOpening'];
 export const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
 export const FELTS = ['green', 'burgundy', 'blue'];

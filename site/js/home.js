@@ -1,7 +1,7 @@
 // The front door: play against bots right now, or set up a table for friends (share a link) / join by code.
 import { t } from './i18n.js';
 import { S, save } from './store.js';
-import { LEVELS, CODE_CHARS, KOFI_URL } from './config.js';
+import { LEVELS, CODE_CHARS, KOFI_URL, VARIANTS } from './config.js';
 import { $, esc, toast } from './ui.js';
 import { tileHTML } from './tiles.js';
 import { sfx } from './sound.js';
@@ -22,6 +22,7 @@ export function renderHome(root, { solo, resume, create, join }) {
       <div class="door solo">
         <button class="bigbtn gold" id="hSolo"><span class="ic">🤖</span><span class="tx"><b>${t('home.solo')}</b><small>${t('home.soloSub')}</small></span><span class="chev">›</span></button>
         <button class="resume" id="hResume" hidden>↻ ${t('home.resume')}</button>
+        <div class="lvrow"><span>${t('home.variant')}</span><div class="seg sm" id="hVar">${VARIANTS.map(x => `<button data-v="${x}" class="${x === S.settings.soloVariant ? 'on' : ''}">${t('variant.' + x)}</button>`).join('')}</div></div>
         <div class="lvrow"><span>${t('home.level')}</span><div class="seg sm" id="hLv">${LEVELS.map(l => `<button data-v="${l}" class="${l === lv ? 'on' : ''}">${t('level.' + l)}</button>`).join('')}</div></div>
       </div>
       <div class="door friends">
@@ -36,6 +37,11 @@ export function renderHome(root, { solo, resume, create, join }) {
   </section>`;
   $('#hSolo').onclick = () => { sfx('clack'); solo(S.settings.soloLevel); };
   $('#hResume').onclick = () => { sfx('clack'); resume(); };
+  $('#hVar').onclick = e => {
+    const b = e.target.closest('button'); if (!b) return;
+    S.settings.soloVariant = b.dataset.v; save();
+    root.querySelectorAll('#hVar button').forEach(x => x.classList.toggle('on', x === b)); sfx('tick');
+  };
   $('#hLv').onclick = e => {
     const b = e.target.closest('button'); if (!b) return;
     S.settings.soloLevel = b.dataset.v; save();

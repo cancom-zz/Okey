@@ -5,9 +5,11 @@ import { EMOTES, BOT_AVATAR } from './config.js';
 import { $, $$, esc, toast, sheet, closeSheet, celebrate, banner, clearBanners } from './ui.js';
 import { sfx } from './sound.js';
 import { Rack, layoutFromGroups } from './rack.js';
-import { tileHTML, tileClass, tileInner, faceHTML, okeyFace, color, num, finishCheck, arrange, loadEngine, getEngine } from './tiles.js';
+import { tileHTML, tileClass, tileInner, faceHTML, okeyFace, color, num, finishCheck, arrange, loadEngine, getEngine, isOkey } from './tiles.js';
+import { load101, rules101, rackOpening, bestLayout, boardHTML, story101, rows101 } from './v101.js';
 import { flyTile, flyStack, flipOver, settle, wait, dur, rectOf, reduced, shake, pulse } from './anim.js';
 import { storyOf, deltasHTML, handGroupsHTML, podiumHTML } from './result.js';
+import { confirmSheet } from './sheets.js';
 import { recordRound, recordMatch, tipCheck, tipNote } from './tip.js';
 
 const RING = 2 * Math.PI * 20;
@@ -47,9 +49,10 @@ export class TableScreen {
           <div class="ind" id="ind"><div class="indt"></div><small>${t('table.indicator')}</small></div>
           <div class="okeyis" id="okeyis" hidden><small>${t('table.okey')}</small><div class="okt"></div></div>
           <div class="fz" id="fz" aria-hidden="true"><span></span></div>
+          <div class="melds" id="melds" hidden></div>
         </div>
-        <div class="melds" id="melds" hidden></div>
-        <div class="status" id="status" role="status" aria-live="polite"></div>
+        <div class="status" id="status" role="status" aria-live="polite"><span class="stx"></span></div>
+        <div class="o101" id="o101" hidden></div>
         <div class="mine seat p0" data-p="0">
           <div class="plate"><div class="av"><svg class="ring" viewBox="0 0 44 44" aria-hidden="true"><circle class="rbg" cx="22" cy="22" r="20"/><circle class="rfg" cx="22" cy="22" r="20" stroke-dasharray="${RING}" stroke-dashoffset="0"/></svg><span class="emo"></span><b class="secs"></b></div>
           <div class="meta"><div class="nm"></div><div class="sub"><span class="sc"></span><span class="tag"></span></div></div></div><div class="bub"></div>
@@ -74,8 +77,10 @@ export class TableScreen {
       onDrop: (tg, id, rect) => this.drop(tg, id, rect),
       onDoubleTap: id => this.quickDiscard(id),
       onSelect: id => this.selectChanged(id),
-      onDragStart: () => this.hideEmotes(),
+      onDragStart: id => { this.hideEmotes(); this.dragStart101(id); },
     });
+    this.rack.onRender = () => this.strip101();
+    $('#o101', r).onclick = e => { const b = e.target.closest('button[data-a]'); if (b && !b.disabled) this.click101(b.dataset.a); };
     $('#bRuns', r).onclick = () => { this.rack.arrange('runs'); };
     $('#bPairs', r).onclick = () => { this.rack.arrange('pairs'); };
     $('#bShow', r).onclick = () => this.act({ type: 'showIndicator' });
@@ -102,26 +107,42 @@ export class TableScreen {
     this.felt.classList.toggle('land', land);
     this.felt.classList.toggle('wide', wide);
     let tw;
+    const cols = this.rack.cols;
     if (!land) {
-      const byW = (W - 8 - 14 - 12) / 13;
+      const byW = (W - 8 - 14 - 12) / cols;
       const byH = (H * 0.31 - 16) / 3.3;
       tw = Math.floor(Math.min(byW, byH, 52));
     } else {
-      const byW = (W * (wide ? 0.54 : 0.56)) / 13;
+      const byW = (W * (wide ? 0.54 : 0.56)) / cols;
       const byH = (H * (wide ? 0.27 : 0.33) - 14) / 3.3;
       tw = Math.floor(Math.min(byW, byH, 60));
     }
     tw = Math.max(20, tw);
     const gap = tw >= 34 ? 2 : 1;
     this.rack.setSize(tw, gap);
-    const dw = Math.round(Math.max(24, Math.min(land ? tw * (wide ? 1.12 : 1.0) : tw * 1.32, wide ? 62 : 42, H / (land ? 9 : 14.5))));
+    // centre and discard tiles: as big as the felt between the opponents and the rack allows
+    let dw = land ? Math.min(tw * (wide ? 1.12 : 1.0), wide ? 62 : 42, H / 9) : Math.min((H - 300) / 5.2, 54, (W - 200) / 2.6);
+    if (this.is101) dw = Math.min(dw, land ? 34 : 38);   // the middle also holds the melds
+    dw = Math.round(Math.max(24, dw));
+    this.mwMax = Math.round(Math.max(12, Math.min(wide ? 30 : 22, tw * 0.8)));
     this.felt.style.setProperty('--dw', dw + 'px');
     this.felt.style.setProperty('--tw', tw + 'px');
-    this.felt.style.setProperty('--bw', Math.round(Math.max(6, land ? dw * (wide ? 0.27 : 0.3) : Math.min(dw * 0.22, (H - 330) / 30))) + 'px');
+    const tiles = this.is101 ? 22 : 15;   // a full opponent rack, in mini tile backs
+    this.felt.style.setProperty('--bw', Math.round(Math.max(5, land ? Math.min(dw * (wide ? 0.27 : 0.3), (W * 0.2) / tiles) : Math.min(dw * 0.22, (H - 330) / (tiles * 2)))) + 'px');
   }
 
   // ---- incoming ----
+  setVariant(view) {
+    const is = !!(view.settings && view.settings.variant === '101');
+    if (is === this.is101) return;
+    this.is101 = is;
+    this.felt.classList.toggle('v101', is);
+    this.rack.setCols(is ? 15 : 13);
+    this.layout();
+    if (is) load101().then(() => { if (this.view) { this.renderMelds(); this.strip101(); } });
+  }
   async update(view, events = []) {
+    this.setVariant(view);
     const prev = this.view;
     this.offset = (view.now || Date.now()) - Date.now();
     const evs = dedupe(events, view.you);
@@ -157,7 +178,7 @@ export class TableScreen {
     this.roundKey = `${view.code}.${r.number}`;
     if (view.hand) {
       const restored = this.rack.restore(this.roundKey, view.hand);
-      if (!restored) this.rack.layout(layoutFromGroups(arrange(view.hand, r.okey, 'runs')));
+      if (!restored) this.rack.layout(layoutFromGroups(arrange(view.hand, r.okey, 'runs'), this.rack.cols));
     }
     this.rack.setOkey(r.okey);
     this.resultShown = null; this.hideResult();
@@ -183,7 +204,11 @@ export class TableScreen {
       $('.emo', el).textContent = s.avatar || (s.kind === 'bot' ? BOT_AVATAR[(s.bot || {}).level] || '🤖' : '🙂');
       $('.nm', el).textContent = s.kind === 'empty' ? t('lobby.empty') : (s.name || '—');
       $('.sc', el).textContent = s.score != null ? s.score : '';
-      $('.tag', el).textContent = s.kind === 'bot' ? t('level.' + ((s.bot || {}).level || 'kalfa')) : s.away ? t('table.away') : (s.kind === 'human' && !s.connected) ? t('table.offline') : '';
+      $('.sc', el).classList.toggle('pen', !!this.is101);
+      const op = this.is101 && r && r.opened ? r.opened[seat] : false, opn = op && r.openings ? r.openings[seat] : null;
+      $('.tag', el).textContent = op ? (op === 'pairs' ? t('tag.openedPairs', { n: opn ? opn.pairs : '' }) : t('tag.opened', { v: opn ? opn.value : '' }))
+        : s.kind === 'bot' ? t('level.' + ((s.bot || {}).level || 'kalfa')) : s.away ? t('table.away') : (s.kind === 'human' && !s.connected) ? t('table.offline') : '';
+      el.classList.toggle('opened', !!op);
       if (p) this.setMiniRack(p, d.count[seat]);
       this.setDiscard(p, d.disc[seat]);
     }
@@ -197,26 +222,101 @@ export class TableScreen {
       const hand = this.pendingDiscard != null ? v.hand.filter(x => x !== this.pendingDiscard) : v.hand;
       const prefer = new Map(); if (this.drawSlot >= 0) hand.forEach(id => { if (!this.rack.slots.includes(id)) prefer.set(id, this.drawSlot); });
       this.rack.sync(hand, prefer); this.drawSlot = -1;
+      this.rack.flags.clear();
+      if (this.is101 && r && r.taken != null && hand.includes(r.taken)) this.rack.flags.set(r.taken, 'taken');
+      this.rack.render();
     } else this.rack.sync([]);
     $('#rack', root).hidden = v.you == null;
     this.tick();
   }
 
-  // Sets laid face up on the table (101 Okey): view.round.melds = [[group, ...] per seat], when a variant has them.
-  // Classic Okey has none, so this stays hidden; it is here so the renderer doesn't assume classic.
-  renderMelds() {
-    const el = $('#melds', this.root), r = this.view.round, m = r && Array.isArray(r.melds) ? r.melds : null;
-    el.hidden = !m || !m.some(x => x && x.length);
+  // Melds laid face up on the table (101 Okey: view.round.table), grouped by owner. Hidden for classic.
+  renderMelds(table, hide) {
+    const el = $('#melds', this.root), r = this.view.round;
+    const tb = table || (this.is101 && r && Array.isArray(r.table) ? r.table : null);
+    el.hidden = !this.is101 || !r;
     if (el.hidden) { el.innerHTML = ''; return; }
-    el.innerHTML = [0, 1, 2, 3].map(p => {
-      const groups = m[this.seatAt(p)] || [];
-      return groups.length ? `<div class="mrow p${p}">${groups.map(g => `<div class="rg">${g.map(id => tileHTML(id, r.okey, 'sm')).join('')}</div>`).join('')}</div>` : '';
-    }).join('');
+    el.innerHTML = tb && tb.length ? boardHTML(tb, r.okey, this.view.seats, s => this.pos(s), hide) : `<div class="mempty">${t('t101.emptyTable')}</div>`;
+    this.fitBoard();
+  }
+  // shrink the meld tiles until every meld fits the board
+  fitBoard() {
+    const el = $('#melds', this.root); if (el.hidden) return;
+    let mw = this.mwMax || 20;
+    el.style.setProperty('--mw', mw + 'px');
+    while (mw > 11 && el.scrollHeight > el.clientHeight + 1) { mw--; el.style.setProperty('--mw', mw + 'px'); }
+  }
+  meldEl(i) { return $(`#melds .mg[data-i="${i}"]`, this.root); }
+
+  // ---- 101: the opening strip under the table (counter, best opening, open / lay, put back the taken tile) ----
+  strip101() {
+    const el = $('#o101', this.root); if (!el) return;
+    const v = this.view, r = v && v.round;
+    if (!this.is101 || !r || v.phase !== 'playing' || v.you == null || !v.hand || !rules101() || this.dealing) { el.hidden = true; this.rack.marks.length && this.rack.setMarks([]); return; }
+    const hand = this.rack.tiles();
+    const op = rackOpening(this.rack.groups(), hand, r, v.settings, v.you);
+    if (!op) { el.hidden = true; return; }
+    this.op101 = op;
+    const list = op.kind === 'pairs' ? op.pairList : op.sets;
+    this.rack.marks = list.map(g => ({ from: this.rack.slotOf(g.ids[0]), to: this.rack.slotOf(g.ids[g.ids.length - 1]), cls: op.kind === 'pairs' ? 'pair' : 'set', label: op.kind === 'pairs' ? null : g.value }))
+      .filter(m => m.from >= 0 && m.to >= m.from && Math.floor(m.from / this.rack.cols) === Math.floor(m.to / this.rack.cols));
+    this.rack.renderMarks();
+    const act = this.can('discard');
+    const taken = r.taken != null && r.turn === v.you && v.hand.includes(r.taken);
+    let html = '';
+    if (taken) html += `<button class="chip warn" data-a="undo">↩ ${t('o101.undo')}</button>`;
+    if (!op.opened) {
+      const cnt = op.kind === 'pairs' ? t('o101.pairs', { n: op.pairs, need: op.req.pairs }) : t('o101.value', { n: op.value, need: op.req.value });
+      html += `<span class="cnt ${op.ok ? 'ok' : ''}">${cnt}</span><button class="chip" data-a="best" title="${esc(t('o101.best'))}">${t('o101.bestShort')}</button><button class="chip gold" data-a="open" ${op.ok && act ? '' : 'disabled'}>${t('o101.open')}</button>`;
+    } else if (op.groups.length) {
+      html += `<span class="cnt ok">${t('o101.more', { n: op.groups.length })}</span><button class="chip gold" data-a="lay" ${op.ok && act ? '' : 'disabled'}>${t('o101.lay')}</button>`;
+    } else if (!taken) { el.hidden = true; return; }
+    el.innerHTML = html; el.hidden = false;
+  }
+  click101(a) {
+    const v = this.view, r = v.round;
+    if (a === 'undo') { this.act({ type: 'undoTake' }); return; }
+    if (a === 'best') {
+      const bl = bestLayout(this.rack.tiles(), r, v.settings, v.you); if (!bl) return;
+      const loose = arrange(bl.rest, r.okey, 'runs');
+      this.rack.layout(layoutFromGroups([...bl.groups, ...loose], this.rack.cols)); sfx('deal');
+      if (!bl.enough) toast(bl.kind === 'pairs' ? t('o101.notYetPairs', { n: bl.count, need: bl.req.pairs }) : t('o101.notYet', { n: bl.value, need: bl.req.value }), '', 2600);
+      return;
+    }
+    if ((a === 'open' || a === 'lay') && this.op101 && this.op101.ok && this.can('discard')) {
+      const groups = this.op101.groups;
+      this.pendingLay = new Set(groups.flat());
+      this.act({ type: 'layDown', groups });
+    }
+  }
+  // dragging a tile: light up the melds it can join (or take an okey back from)
+  dragStart101(id) {
+    if (!this.is101 || !rules101() || !this.can('discard')) return;
+    const v = this.view, r = v.round; if (!r.opened || !r.opened[v.you]) return;
+    const R = rules101(), ok = new Set();
+    R.layoffs([id], r.table, r.okey).forEach(x => ok.add(x.meld));
+    R.swaps([id], r.table, r.okey).forEach(x => ok.add(x.meld));
+    ok.forEach(i => { const m = this.meldEl(i); if (m) m.classList.add('can'); });
+  }
+  // what dropping `id` on meld i at x means: add at a side, or swap an okey out (pointer on that okey)
+  meldMove(id, i, x, y) {
+    const R = rules101(), r = this.view.round, m = r.table[i], el = this.meldEl(i);
+    if (!R || !m || !el) return null;
+    const sw = R.swapTile(m, id, r.okey);
+    const over = document.elementsFromPoint(x, y).find(e => e.closest && e.closest('.mg') === el && e.dataset && e.dataset.id);
+    if (sw && over && +over.dataset.id === sw.okey) return { type: 'swapOkey', tile: id, meld: i, okey: sw.okey };
+    if (m.kind === 'run') {
+      const b = el.getBoundingClientRect(), pref = x < b.left + b.width / 2 ? 'start' : 'end', other = pref === 'start' ? 'end' : 'start';
+      const side = R.addTile(m, id, r.okey, pref) ? pref : R.addTile(m, id, r.okey, other) ? other : null;
+      if (side) return { type: 'addToSet', tile: id, meld: i, side };
+    } else if (m.kind === 'group' && R.addTile(m, id, r.okey)) return { type: 'addToSet', tile: id, meld: i };
+    if (sw) return { type: 'swapOkey', tile: id, meld: i, okey: sw.okey };
+    return null;
   }
   renderPlacard() {
     const v = this.view, r = v.round, pl = $('.placard', this.root);
     pl.innerHTML = `<div class="pl1"><b>${this.ctx.solo ? t('placard.practice') : t('placard.table', { code: esc(v.code) })}</b><span class="led">${r ? t('placard.round', { n: r.number }) : ''}</span></div>
-      <div class="pl2"><span>${v.settings && v.settings.turnSeconds ? t('placard.turn', { s: v.settings.turnSeconds }) : t('placard.noClock')}</span><span class="led g">${v.settings && v.settings.rounds ? t('placard.rounds', { n: v.settings.rounds }) : t('placard.toZero')}</span></div>`;
+      <div class="pl2"><span>${v.settings && v.settings.turnSeconds ? t('placard.turn', { s: v.settings.turnSeconds }) : t('placard.noClock')}</span><span class="led g">${this.is101 ? t('placard.v101Rounds', { n: v.settings.rounds }) : v.settings && v.settings.rounds ? t('placard.rounds', { n: v.settings.rounds }) : t('placard.toZero')}</span></div>`;
   }
 
   setMiniRack(p, n) {
@@ -256,21 +356,21 @@ export class TableScreen {
     if (v.phase === 'playing' && r) {
       if (r.turn === v.you) {
         cls = 'me';
-        txt = r.stage === 'draw' ? t('status.youDraw') : (r.firstTurn && r.firstTurn[v.you] && r.number && r.dealer === v.you && this.disp && this.disp.count[v.you] === 15 ? t('status.youStart') : t('status.youDiscard'));
+        txt = r.stage === 'draw' ? t('status.youDraw') : this.is101 ? t('status.youDiscard101') : (r.firstTurn && r.firstTurn[v.you] && r.number && r.dealer === v.you && this.disp && this.disp.count[v.you] === 15 ? t('status.youStart') : t('status.youDiscard'));
       } else {
         const s = v.seats[r.turn] || {};
         txt = t('status.theyPlay', { name: esc(s.name || '') });
       }
     } else if (v.phase === 'roundEnd') txt = t('status.roundEnd');
     else if (v.phase === 'matchEnd') txt = t('status.matchEnd');
-    el.innerHTML = txt; el.className = 'status ' + cls;
+    $('.stx', el).innerHTML = txt; el.className = 'status ' + cls;
     const myTurn = v.phase === 'playing' && r && r.turn === v.you;
     this.felt.classList.toggle('can-draw', !!(myTurn && r.stage === 'draw'));
     this.felt.classList.toggle('can-discard', !!(myTurn && r.stage === 'discard'));
   }
   buttons() {
     const v = this.view, r = v.round, b = $('#bShow', this.root);
-    const canShow = v.phase === 'playing' && r && v.you != null && r.firstTurn && r.firstTurn[v.you] && v.seats[v.you] && !v.seats[v.you].showedIndicator
+    const canShow = !this.is101 && v.phase === 'playing' && r && v.you != null && r.firstTurn && r.firstTurn[v.you] && v.seats[v.you] && !v.seats[v.you].showedIndicator
       && v.hand && v.hand.some(x => x !== r.indicator && x < 104 && color(x) === color(r.indicator) && num(x) === num(r.indicator));
     b.hidden = !canShow;
   }
@@ -307,6 +407,7 @@ export class TableScreen {
     this.busy = false;
     if (this.pendingDiscard != null) { const id = this.pendingDiscard; this.pendingDiscard = null; this.rack.hide(id, false); }
     if (this.pendingDraw) { this.pendingDraw = null; }
+    if (this.pendingLay) { this.pendingLay.forEach(id => this.rack.hide(id, false)); this.pendingLay = null; }
     this.disp = dispFrom(this.view); this.render();
     sfx('error');
     toast(esc(t('err.' + code) !== 'err.' + code ? t('err.' + code) : t('err.generic')), 'err');
@@ -314,13 +415,24 @@ export class TableScreen {
 
   targetAt(x, y) {
     if (!this.can('discard')) return null;
+    this.pt = { x, y };
     const inside = (el, pad = 10) => { if (!el) return false; const b = el.getBoundingClientRect(); return x >= b.left - pad && x <= b.right + pad && y >= b.top - pad && y <= b.bottom + pad; };
     if (inside($('.ds.d0', this.root), 14)) return 'discard';
+    if (this.is101) {
+      const mg = $$('#melds .mg', this.root).find(m => inside(m, 5));
+      return mg ? 'meld:' + mg.dataset.i : null;
+    }
     if (inside($('.center', this.root), 4)) return 'finish';
     return null;
   }
   hover(target, id) {
     const fz = $('#fz', this.root), d0 = $('.ds.d0', this.root);
+    $$('#melds .mg.hot', this.root).forEach(m => m.classList.remove('hot', 'ok', 'no'));
+    if (target == null) $$('#melds .mg.can', this.root).forEach(m => m.classList.remove('can'));
+    if (target && target.startsWith('meld:')) {
+      const i = +target.slice(5), m = this.meldEl(i), mv = this.pt && this.meldMove(id, i, this.pt.x, this.pt.y);
+      if (m) m.classList.add('hot', mv ? 'ok' : 'no');
+    }
     d0.classList.toggle('hot', target === 'discard');
     fz.classList.remove('ok', 'no');
     this.felt.classList.toggle('finishing', target === 'finish');
@@ -340,13 +452,58 @@ export class TableScreen {
     this.hover(null, id);
     if (target === 'discard') return this.discardFrom(id, rect);
     if (target === 'finish') return this.tryFinish(id, rect);
+    if (target && target.startsWith('meld:')) return this.toMeld(id, +target.slice(5), rect);
     return false;
   }
+  toMeld(id, i, rect) {
+    const v = this.view, r = v.round;
+    if (!r.opened || !r.opened[v.you]) { sfx('error'); toast(t('err.notOpened'), 'err'); return false; }
+    const mv = this.pt && this.meldMove(id, i, this.pt.x, this.pt.y);
+    if (!mv) { sfx('error'); shake(this.meldEl(i)); toast(t('err.cannotAdd'), 'err'); return false; }
+    this.pendingLay = new Set([id]); this.rack.hide(id, true);
+    const m = this.meldEl(i), b = m.getBoundingClientRect(), tr = m.querySelector('.tile').getBoundingClientRect();
+    const to = { left: mv.side === 'start' ? b.left - tr.width : b.right, top: tr.top, width: tr.width, height: tr.height };
+    flyTile({ id, okey: r.okey, from: rect, to, start: 'face', ms: 260, arc: 0.1 });
+    this.act(mv);
+    return true;
+  }
   quickDiscard(id) { if (this.can('discard')) this.discardFrom(id, this.rack.tileRect(id)); }
+  // 101: the tile flies from where it is to its place on the board (rendered with the new melds, tiles hidden)
+  async flyToBoard(ev, next, ids, seat) {
+    const r = next.round, me = next.you, p = this.pos(seat);
+    const hide = new Set(ids);
+    this.view = { ...this.view, round: { ...this.view.round, table: r.table } };
+    this.renderMelds(r.table, hide);
+    const flights = ids.map((id, k) => {
+      const dst = $(`#melds .tile[data-id="${id}"]`, this.root);
+      const from = seat === me ? this.rack.tileRect(id) : shrink(rectOf($(`.seat.p${p} .mrack`, this.root)), rectOf(dst));
+      if (seat === me) this.rack.hide(id, true);
+      return flyTile({ id, okey: r.okey, from, to: rectOf(dst), start: seat === me ? 'face' : 'back', ms: 380, arc: 0.18, delay: k * 45 })
+        .then(() => { if (dst) { dst.classList.remove('gone'); settle(dst, 0.5); } if (k % 2 === 0) sfx('clack', { level: 0.5 }); });
+    });
+    await Promise.all(flights);
+    this.disp.count[seat] = Math.max(0, this.disp.count[seat] - ids.length);
+    if (p) this.setMiniRack(p, this.disp.count[seat]);
+  }
   selectChanged(id) { this.felt.classList.toggle('picked', id != null); }
 
-  discardFrom(id, fromRect) {
+  discardFrom(id, fromRect, sure = false) {
     if (!this.can('discard')) return false;
+    if (this.is101 && !sure) {
+      const v = this.view, r = v.round, R = rules101();
+      if (r.taken != null && v.hand.includes(r.taken)) { sfx('error'); toast(t('err.mustUseTaken'), 'err'); return false; }
+      const sc = v.settings.scoring || {};
+      if (R && v.hand.length > 1) {
+        const islek = R.isIslek(id, r.table, r.okey, { swap: v.settings.okeySwap !== false });
+        const okeyPen = !islek && sc.okeyDiscard > 0 && isOkey(id, r.okey);
+        if (islek || okeyPen) {
+          const n = islek ? sc.islek || 101 : sc.okeyDiscard;
+          sfx('error');
+          confirmSheet(t(islek ? 'islek.title' : 'islek.okeyTitle'), t(islek ? 'islek.body' : 'islek.okeyBody', { n }), t('islek.yes', { n }), () => this.discardFrom(id, this.rack.tileRect(id), true));
+          return false;
+        }
+      }
+    }
     this.pendingDiscard = id;
     this.rack.hide(id, true);
     const to = rectOf($('.ds.d0 .dstack', this.root));
@@ -395,7 +552,7 @@ export class TableScreen {
       }
       drag.ghost.style.transform = `translate(${e.clientX - this.rack.tw / 2}px,${e.clientY - this.rack.th * 0.8}px) rotate(-3deg) scale(1.1)`;
       const slot = this.rack.slotAt(e.clientX, e.clientY - this.rack.th * 0.3);
-      if (slot !== drag.slot) { drag.slot = slot; this.rack.preview = slot >= 0 && this.rack.slots[slot] != null ? shiftPreview(this.rack.slots, slot) : null; this.rack.render(); }
+      if (slot !== drag.slot) { drag.slot = slot; this.rack.preview = slot >= 0 && this.rack.slots[slot] != null ? shiftPreview(this.rack.slots, slot, this.rack.cols) : null; this.rack.render(); }
     });
     const end = (e, cancel) => {
       if (!drag || e.pointerId !== drag.pid) return;
@@ -476,12 +633,79 @@ export class TableScreen {
         return;
       }
       case 'showIndicator': return this.showIndicatorFx(ev, true);
+      case 'take': return this.takeFx(ev, next, false);
+      case 'undoTake': return this.takeFx(ev, next, true);
+      case 'layDown': {
+        await this.flyToBoard(ev, next, ev.melds.flatMap(m => m.tiles), ev.seat);
+        if (ev.seat === me) this.pendingLay = null;
+        if (ev.opening) {
+          const s = next.seats[ev.seat] || {}, o = ev.opening;
+          const msg = o.kind === 'pairs' ? t(ev.seat === me ? 't101.youOpenedPairs' : 't101.openedPairs', { name: esc(s.name || ''), n: o.pairs })
+            : t(ev.seat === me ? 't101.youOpened' : 't101.opened', { name: esc(s.name || ''), n: o.value });
+          toast(msg, ev.seat === me ? 'win' : '', 2400); sfx(ev.seat === me ? 'win' : 'pop');
+        }
+        return;
+      }
+      case 'addToSet': { await this.flyToBoard(ev, next, [ev.tile], ev.seat); if (ev.seat === me) this.pendingLay = null; return; }
+      case 'swapOkey': {
+        await this.flyToBoard(ev, next, [ev.tile], ev.seat);
+        if (ev.seat === me) this.pendingLay = null;
+        sfx('okey');
+        const p = this.pos(ev.seat), src = rectOf(this.meldEl(ev.meld)) || rectOf($('#melds', this.root));
+        if (ev.seat === me) {
+          this.rack.hide(ev.okey, true); this.rack.sync([...this.rack.tiles(), ev.okey]);
+          await flyTile({ id: ev.okey, okey, from: src, to: this.rack.tileRect(ev.okey), start: 'face', ms: 420, arc: 0.25, cls: 'golden' });
+          this.rack.hide(ev.okey, false); settle(this.rack.els.get(ev.okey));
+        } else await flyTile({ id: ev.okey, okey, from: src, to: shrink(rectOf($(`.seat.p${p} .mrack`, this.root)), src), start: 'face', ms: 420, arc: 0.25, cls: 'golden' });
+        this.disp.count[ev.seat]++;
+        return;
+      }
+      case 'penalty': {
+        const p = this.pos(ev.seat), s = next.seats[ev.seat] || {}, pl = $(`.seat.p${p} .plate`, this.root);
+        const f = document.createElement('b'); f.className = 'delta neg'; f.textContent = '+' + ev.points;
+        pl.appendChild(f); setTimeout(() => f.remove(), dur(1800) || 50);
+        toast(t(ev.reason === 'okeyDiscard' ? 't101.penOkey' : 't101.penIslek', { name: esc(s.name || ''), n: ev.points }), 'err', 2600);
+        sfx('error'); await wait(300);
+        return;
+      }
       case 'finish': return this.finishFx(ev, next);
       case 'pileEmpty': toast(t('toast.pileEmpty'), '', 2600); await wait(500); return;
       case 'score': return this.scoreFx(ev, next);
       case 'matchEnd': return;
       default: return;
     }
+  }
+
+  // 101: picking up the left discard (it must go to the table this turn), or putting it back.
+  async takeFx(ev, next, undo) {
+    const okey = (next.round || {}).okey, me = next.you, p = this.pos(ev.seat), d = this.disp;
+    const prevSeat = (ev.seat + 3) % 4, pp = this.pos(prevSeat), st = d.disc[prevSeat];
+    const stackRect = rectOf($(`.ds.d${pp} .dstack`, this.root));
+    if (!undo) {
+      st.count = Math.max(0, st.count - 1);
+      st.top = st.count && next.seats[prevSeat].discard.count === st.count ? next.seats[prevSeat].discard.top : null;
+      this.setDiscard(pp, st);
+      if (ev.seat === me) {
+        const pd = this.pendingDraw; this.pendingDraw = null;
+        const slot = this.drawSlot >= 0 ? this.drawSlot : this.rack.newSlot(); this.drawSlot = -1;
+        this.rack.hide(ev.tile, true); this.rack.sync([...this.rack.tiles(), ev.tile], new Map([[ev.tile, slot]]));
+        this.rack.flag(ev.tile, 'taken');
+        sfx('draw');
+        await flyTile({ id: ev.tile, okey, from: (pd && pd.rect) || stackRect, to: this.rack.tileRect(ev.tile), start: 'face', ms: pd && pd.rect ? 160 : 400, arc: 0.18 });
+        this.rack.hide(ev.tile, false); settle(this.rack.els.get(ev.tile), 0.6);
+      } else {
+        await flyTile({ id: ev.tile, okey, from: stackRect, to: shrink(rectOf($(`.seat.p${p} .mrack`, this.root)), stackRect), start: 'face', ms: 400, arc: 0.15 });
+        toast(t('t101.took', { name: esc((next.seats[ev.seat] || {}).name || '') }), '', 1800);
+      }
+      d.count[ev.seat]++;
+    } else {
+      const from = ev.seat === me ? this.rack.tileRect(ev.tile) : shrink(rectOf($(`.seat.p${p} .mrack`, this.root)), stackRect);
+      if (ev.seat === me) this.rack.hide(ev.tile, true);
+      await flyTile({ id: ev.tile, okey, from, to: stackRect, start: 'face', ms: 360, arc: 0.2 });
+      st.count++; st.top = ev.tile; this.setDiscard(pp, st); sfx('settle');
+      d.count[ev.seat] = Math.max(0, d.count[ev.seat] - 1);
+    }
+    if (p) this.setMiniRack(p, d.count[ev.seat]);
   }
 
   // The deal: a quick shuffle, stacks of five fly to every rack, your tiles land slot by slot, the indicator turns.
@@ -507,10 +731,12 @@ export class TableScreen {
     let shown = 0;
     const flights = [];
     let k = 0;
-    for (let pass = 0; pass < 3; pass++) {
+    const want = next.seats.map((s, i) => (i === next.you && next.hand ? next.hand.length : s.handCount || 0)), given = [0, 0, 0, 0];
+    for (let pass = 0; given.some((g, i) => g < want[i]) && pass < 6; pass++) {
       for (let i = 0; i < 4; i++) {
         const seat = (ev.dealer + i) % 4, p = this.pos(seat);
-        const n = pass < 2 ? 5 : (seat === ev.dealer ? 5 : 4);
+        const n = Math.min(5, want[seat] - given[seat]); if (n <= 0) continue;
+        given[seat] += n;
         const to = p === 0 ? rectOf($('#rack', this.root)) : rectOf($(`.seat.p${p} .mrack`, this.root));
         const delay = k * 95; k++;
         flights.push(flyStack({ from, to, n, ms: 330, delay, vertical: p === 1 || p === 3 }).then(() => {
@@ -552,7 +778,8 @@ export class TableScreen {
     for (let p = 0; p < 4; p++) {
       const seat = this.seatAt(p), dlt = ev.deltas[seat]; if (!dlt) continue;
       const el = $(`.seat.p${p} .plate`, this.root);
-      const f = document.createElement('b'); f.className = 'delta ' + (dlt < 0 ? 'neg' : 'pos'); f.textContent = (dlt > 0 ? '+' : '−') + Math.abs(dlt);
+      const bad = this.is101 ? dlt > 0 : dlt < 0;
+      const f = document.createElement('b'); f.className = 'delta ' + (bad ? 'neg' : 'pos'); f.textContent = (dlt > 0 ? '+' : '−') + Math.abs(dlt);
       el.appendChild(f); setTimeout(() => f.remove(), dur(1800) || 50);
       $('.sc', el).textContent = ev.scores[seat];
     }
@@ -579,7 +806,7 @@ export class TableScreen {
     const key = resultKey(v);
     if (this.resultShown === key) return;
     this.resultShown = key;
-    const r = v.result, el = $('#result', this.root), story = storyOf(v);
+    const r = v.result, el = $('#result', this.root), story = this.is101 ? story101(v) : storyOf(v);
     const win = r.winner != null ? v.seats[r.winner] : null;
     const okey = v.round && v.round.okey;
     const isMatch = v.phase === 'matchEnd';
@@ -588,7 +815,7 @@ export class TableScreen {
       <div class="rv-rack"><div class="rv-groups">${handGroupsHTML(v)}</div>
         <div class="rv-fin"><small>${t('result.finishTile')}</small>${tileHTML(r.tile, okey, 'rv fin')}</div></div>` : ''}
       <div class="rhead"><div class="rverd">${esc(story.v)}</div><div class="rline">${esc(story.line)}${story.extra ? ' ' + esc(story.extra) : ''}</div></div>
-      ${deltasHTML(v)}
+      ${this.is101 ? rows101(v) : deltasHTML(v)}
       <div class="rv-acts">
         ${isMatch ? `<button class="btn" id="rvHome">${t('result.leave')}</button><button class="btn gold" id="rvNext">${t('result.rematch')}</button>`
           : `<button class="btn ghost" id="rvHands">${t('result.allHands')}</button><button class="btn gold" id="rvNext">${t('result.next')}</button>`}
@@ -635,13 +862,14 @@ export class TableScreen {
     if (r.winner != null) {
       if (won) {
         tipNote(true);
-        const big = r.okeyFinish || r.kind === 'pairs';
+        const big = r.okeyFinish || r.kind === 'pairs' || r.elden || (r.multiplier || 1) > 1;
         if (!isMatch) celebrate(big ? story.v : t('cele.win'), big ? t('cele.bigSub') : t('cele.winSub'), { sound: r.okeyFinish ? 'okey' : 'win', sparks: big ? 60 : 30 });
       } else sfx('lose');
     }
     if (isMatch) {
       await wait(900);
-      const winners = (ev && ev.winners) || v.winners || v.seats.map((s, i) => i).filter(i => v.seats[i].score === Math.max(...v.seats.map(s => s.score)));
+      const pick = this.is101 ? Math.min : Math.max, top = pick(...v.seats.map(s => s.score));
+      const winners = (ev && ev.winners) || v.winners || v.seats.map((s, i) => i).filter(i => v.seats[i].score === top);
       const iWon = winners.includes(v.you);
       recordMatch(v, iWon, this.ctx.solo);
       if (iWon) { celebrate(t('cele.champion'), t('cele.championSub'), { sound: 'fanfare', sparks: 90 }); tipNote(true); }
@@ -662,7 +890,7 @@ export class TableScreen {
   }
   showPodium() {
     const v = this.view;
-    sheet(`<h2>${t('podium.title')}</h2>${podiumHTML(v)}
+    sheet(`<h2>${t('podium.title')}</h2>${podiumHTML(v, this.is101)}${this.is101 ? `<p class="muted small center">${t('podium.lowWins')}</p>` : ''}
       <div class="row"><button class="btn" id="pdHome">${t('result.leave')}</button><button class="btn gold" id="pdAgain">${t('result.rematch')}</button></div>`, { cls: 'podsheet' });
     $('#pdHome').onclick = () => { closeSheet(); this.ctx.leave(); };
     $('#pdAgain').onclick = () => { closeSheet(); const b = $('#rvNext', this.root); if (b && !b.disabled) b.click(); };
@@ -711,8 +939,8 @@ function shrink(r, like) {
   const w = like ? like.width * 0.7 : 16, h = like ? like.height * 0.7 : 24;
   return { left: r.left + r.width / 2 - w / 2, top: r.top + r.height / 2 - h / 2, width: w, height: h };
 }
-function shiftPreview(slots, at) {
-  const s = slots.slice(), base = Math.floor(at / 13) * 13;
-  for (let j = at + 1; j < base + 13; j++) if (s[j] == null) { for (let k = j; k > at; k--) s[k] = s[k - 1]; s[at] = null; return s; }
+function shiftPreview(slots, at, cols) {
+  const s = slots.slice(), base = Math.floor(at / cols) * cols;
+  for (let j = at + 1; j < base + cols; j++) if (s[j] == null) { for (let k = j; k > at; k--) s[k] = s[k - 1]; s[at] = null; return s; }
   return slots;
 }

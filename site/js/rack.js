@@ -1,21 +1,21 @@
 // The ıstaka: two tiers of 13 slots, owned by the client (the server only knows the unordered hand).
 // Tiles are absolutely positioned by slot, so moves glide by CSS transition. Drag with pointer events
 // (touch + mouse): neighbours slide aside live; drop on the rack, on your discard spot or on the centre (finish).
-import { COLS, TIERS, SLOTS } from './config.js';
+import { COLS, TIERS } from './config.js';
 import { tileClass, tileInner, arrange as arrangeIds, layoutGroups } from './tiles.js';
 import { loadRack, saveRack } from './store.js';
 import { sfx } from './sound.js';
 import { dur, reduced } from './anim.js';
 
 // Put `id` at slot `to`; occupied slots shift toward the nearest gap in that tier. Pure: returns a new array.
-export function moveIn(slots, id, to) {
+export function moveIn(slots, id, to, cols = COLS) {
   const s = slots.slice();
   const from = s.indexOf(id);
   if (from >= 0) s[from] = null;
   if (s[to] == null) { s[to] = id; return s; }
-  const base = Math.floor(to / COLS) * COLS;
+  const base = Math.floor(to / cols) * cols;
   let r = -1, l = -1;
-  for (let j = to + 1; j < base + COLS; j++) if (s[j] == null) { r = j; break; }
+  for (let j = to + 1; j < base + cols; j++) if (s[j] == null) { r = j; break; }
   for (let j = to - 1; j >= base; j--) if (s[j] == null) { l = j; break; }
   if (r >= 0 && (l < 0 || r - to <= to - l)) { for (let k = r; k > to; k--) s[k] = s[k - 1]; s[to] = id; return s; }
   if (l >= 0) { for (let k = l; k < to; k++) s[k] = s[k + 1]; s[to] = id; return s; }
@@ -25,17 +25,18 @@ export function moveIn(slots, id, to) {
 }
 
 // Lay groups out tier by tier with one gap between them (fewer gaps when it would not fit).
-export function layoutFromGroups(groups) {
+export function layoutFromGroups(groups, cols = COLS) {
+  const SLOTS = cols * TIERS;
   // sets keep a gap between them; loose leftovers too when there is room, else they close up
   for (const [setGap, looseGap] of [[1, 1], [1, 0], [0, 0]]) {
     const s = Array(SLOTS).fill(null);
     let tier = 0, col = 0, ok = true;
     for (const g of groups) {
       if (!g.length) continue;
-      if (col + g.length > COLS) {
-        if (tier + 1 < TIERS && g.length <= COLS) { tier++; col = 0; } else { ok = false; break; }
+      if (col + g.length > cols) {
+        if (tier + 1 < TIERS && g.length <= cols) { tier++; col = 0; } else { ok = false; break; }
       }
-      g.forEach((id, i) => { s[tier * COLS + col + i] = id; });
+      g.forEach((id, i) => { s[tier * cols + col + i] = id; });
       col += g.length + (g.loose ? looseGap : setGap);
     }
     if (ok) return s;
@@ -46,7 +47,9 @@ export function layoutFromGroups(groups) {
 export class Rack {
   constructor(host, opts = {}) {
     this.host = host; this.opts = opts;
-    this.slots = Array(SLOTS).fill(null);
+    this.cols = COLS;
+    this.slots = Array(COLS * TIERS).fill(null);
+    this.marks = []; this.flags = new Map();
     this.preview = null; this.okey = null; this.key = null;
     this.els = new Map(); this.selected = null; this.hidden = new Set();
     this.tw = 28; this.th = 42; this.gap = 2; this.tierGap = 8; this.padX = 0;
@@ -57,9 +60,17 @@ export class Rack {
     this.drag = null; this.lastTap = { id: null, t: 0 };
   }
 
+  // 13 slots a tier for classic Okey, 15 for 101's 22-tile hands. Tiles keep their groups when it changes.
+  setCols(cols) {
+    if (cols === this.cols) return;
+    const groups = this.groups();
+    this.cols = cols;
+    this.slots = layoutFromGroups(groups, cols);
+    this.setSize(this.tw, this.gap);
+  }
   setSize(tw, gap) {
     this.tw = tw; this.th = Math.round(tw * 1.5); this.gap = gap; this.tierGap = Math.max(5, Math.round(tw * 0.32));
-    const W = COLS * tw + (COLS - 1) * gap, H = TIERS * this.th + (TIERS - 1) * this.tierGap;
+    const W = this.cols * tw + (this.cols - 1) * gap, H = TIERS * this.th + (TIERS - 1) * this.tierGap;
     this.host.style.setProperty('--tw', tw + 'px');
     this.host.style.setProperty('--th', this.th + 'px');
     this.host.style.setProperty('--rw', W + 'px');
@@ -68,7 +79,7 @@ export class Rack {
     this.render(true);
   }
   pos(i) {
-    const tier = Math.floor(i / COLS), col = i % COLS;
+    const tier = Math.floor(i / this.cols), col = i % this.cols;
     return { x: col * (this.tw + this.gap), y: tier * (this.th + this.tierGap) };
   }
   slotRect(i) {
@@ -78,15 +89,15 @@ export class Rack {
   slotOf(id) { return this.slots.indexOf(id); }
   tileRect(id) { const i = this.slotOf(id); return i >= 0 ? this.slotRect(i) : null; }
   tiles() { return this.slots.filter(x => x != null); }
-  groups() { return layoutGroups(this.slots, COLS); }
+  groups() { return layoutGroups(this.slots, this.cols); }
 
   // client point -> slot index (or -1 when well outside the rack)
   slotAt(x, y, margin = 24) {
     const b = this.box.getBoundingClientRect();
     if (x < b.left - margin || x > b.right + margin || y < b.top - margin * 1.6 || y > b.bottom + margin) return -1;
-    const col = Math.max(0, Math.min(COLS - 1, Math.floor((x - b.left + this.gap / 2) / (this.tw + this.gap))));
+    const col = Math.max(0, Math.min(this.cols - 1, Math.floor((x - b.left + this.gap / 2) / (this.tw + this.gap))));
     const tier = y - b.top < this.th + this.tierGap / 2 ? 0 : 1;
-    return tier * COLS + col;
+    return tier * this.cols + col;
   }
 
   setOkey(okey) { this.okey = okey; this.els.forEach((el, id) => { el.className = this.cls(id); }); }
@@ -95,14 +106,14 @@ export class Rack {
   restore(key, hand) {
     this.key = key; this.selected = null;
     const saved = loadRack(key);
-    if (saved && saved.length === SLOTS) {
+    if (saved && saved.length === this.cols * TIERS) {
       const set = new Set(hand), kept = saved.filter(x => x != null && set.has(x));
       if (hand.length && kept.length / hand.length >= 0.6) {
         this.slots = saved.map(x => (x != null && set.has(x) ? x : null));
         this.sync(hand); return true;
       }
     }
-    this.slots = Array(SLOTS).fill(null);
+    this.slots = Array(this.cols * TIERS).fill(null);
     return false;
   }
   save() { if (this.key) saveRack(this.key, this.slots); }
@@ -114,7 +125,7 @@ export class Rack {
     for (const id of hand) {
       if (this.slots.includes(id)) continue;
       const p = prefer.get(id);
-      this.slots = moveIn(this.slots, id, p != null && p >= 0 ? p : this.newSlot());
+      this.slots = moveIn(this.slots, id, p != null && p >= 0 ? p : this.newSlot(), this.cols);
     }
     if (this.selected != null && !set.has(this.selected)) this.selected = null;
     this.render(); this.save();
@@ -123,10 +134,10 @@ export class Rack {
   newSlot() {
     for (const tier of [1, 0]) {
       let last = -1;
-      for (let c = 0; c < COLS; c++) if (this.slots[tier * COLS + c] != null) last = c;
+      for (let c = 0; c < this.cols; c++) if (this.slots[tier * this.cols + c] != null) last = c;
       const want = last < 0 ? 0 : last + 2;
-      if (want < COLS) return tier * COLS + want;
-      if (last + 1 < COLS) return tier * COLS + last + 1;
+      if (want < this.cols) return tier * this.cols + want;
+      if (last + 1 < this.cols) return tier * this.cols + last + 1;
     }
     const e = this.slots.indexOf(null); return e < 0 ? 0 : e;
   }
@@ -136,12 +147,28 @@ export class Rack {
     const ids = this.tiles(); if (!ids.length) return;
     const groups = arrangeIds(ids, this.okey, mode);
     this.selected = null;
-    this.layout(layoutFromGroups(groups));
+    this.layout(layoutFromGroups(groups, this.cols));
     sfx('deal');
   }
 
   cls(id) {
-    return tileClass(id, this.okey) + ' rt' + (this.selected === id ? ' sel' : '') + (this.drag && this.drag.id === id && this.drag.moved ? ' drag' : '') + (this.hidden.has(id) ? ' gone' : '');
+    return tileClass(id, this.okey) + ' rt' + (this.selected === id ? ' sel' : '') + (this.drag && this.drag.id === id && this.drag.moved ? ' drag' : '') + (this.hidden.has(id) ? ' gone' : '') + (this.flags.has(id) ? ' ' + this.flags.get(id) : '');
+  }
+  // a class on one tile (e.g. 'taken': the discard you picked up in 101 and must play)
+  flag(id, cls) { this.flags.clear(); if (id != null) this.flags.set(id, cls); this.render(); }
+  // underlines under groups of slots: [{ from, to, cls }] (same tier), drawn on the ledge
+  setMarks(marks) { this.marks = marks || []; this.renderMarks(); }
+  renderMarks() {
+    const box = this.box, want = this.preview ? [] : this.marks;
+    let els = [...box.querySelectorAll('.gmark')];
+    while (els.length > want.length) els.pop().remove();
+    while (els.length < want.length) { const m = document.createElement('i'); m.className = 'gmark'; box.prepend(m); els.push(m); }
+    want.forEach((m, k) => {
+      const a = this.pos(m.from), w = (m.to - m.from + 1) * (this.tw + this.gap) - this.gap;
+      const el = els[k]; el.className = 'gmark ' + (m.cls || '');
+      el.style.cssText = `transform:translate(${a.x}px,${a.y + this.th + 1}px);width:${w}px`;
+      if (m.label != null) el.dataset.l = m.label; else delete el.dataset.l;
+    });
   }
   hide(id, on = true) { if (on) this.hidden.add(id); else this.hidden.delete(id); const el = this.els.get(id); if (el) el.className = this.cls(id); }
 
@@ -166,6 +193,8 @@ export class Rack {
       if (el.style.transition === 'none') { void el.offsetWidth; el.style.transition = ''; }
     });
     for (const [id, el] of this.els) if (!seen.has(id)) { el.remove(); this.els.delete(id); }
+    this.renderMarks();
+    if (this.onRender) this.onRender();
   }
 
   // ---- pointer handling ----
@@ -199,7 +228,7 @@ export class Rack {
     const slot = target ? -1 : this.slotAt(cx, cy);
     if (slot !== d.slot) {
       d.slot = slot;
-      this.preview = slot >= 0 ? moveIn(this.slots, d.id, slot) : null;
+      this.preview = slot >= 0 ? moveIn(this.slots, d.id, slot, this.cols) : null;
       if (slot >= 0 && this.preview[slot] === d.id && this.slots[slot] !== d.id) sfx('tick');
       this.render();
     }
@@ -239,7 +268,7 @@ export class Rack {
     if (e.target.closest('.rt') || this.selected == null) return;
     const slot = this.slotAt(e.clientX, e.clientY, 0);
     if (slot < 0 || this.slots[slot] != null) return;
-    this.slots = moveIn(this.slots, this.selected, slot); this.selected = null;
+    this.slots = moveIn(this.slots, this.selected, slot, this.cols); this.selected = null;
     this.save(); sfx('tick'); this.render();
     this.opts.onSelect && this.opts.onSelect(null);
   }

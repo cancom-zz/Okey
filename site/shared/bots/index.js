@@ -3,7 +3,7 @@
 //   const bot = createBot({ level: 'usta', params: { defense: 0.9 }, seed: 'room-ABC-seat-2' });
 //   bot.observe(event)        // every event its seat receives (eventsFor(events, seat))
 //   bot.delayMs(view) -> ms   // thinking time before acting on this view
-//   bot.decide(view) -> action | null   (null: not this bot's move)
+//   bot.decide(view) -> action | null   (null: not this bot's move; 101: one step per call)
 //   bot.snapshot() -> JSON    // restore with createBot({ ..., saved })
 //
 // Every bot owns its RNG, memory and per-round state; there is no module-level mutable state, so bots
@@ -12,6 +12,7 @@
 import { seededRng } from '../okey/rng.js';
 import { Memory } from './memory.js';
 import { plan } from './classic.js';
+import { plan101 } from './okey101.js';
 
 export const LEVEL_IDS = ['cirak', 'kalfa', 'usta', 'uzman'];
 
@@ -66,7 +67,7 @@ export function resolveParams(level, overrides = {}) {
   };
 }
 
-const BASE_DELAY = { show: 1000, draw: 750, discard: 1000, finish: 1700 };
+const BASE_DELAY = { show: 1000, draw: 750, discard: 1000, finish: 1700, open: 1400, play: 800 };
 const MIN_DELAY = 350;
 const MAX_DELAY = 4000;
 
@@ -83,12 +84,14 @@ export function createBot({ level = DEFAULT_LEVEL, params, seed = 1, saved } = {
   };
   const mem = new Memory(p, rng, saved?.memory);
   const st = { round: null, indicator: null, gambled: false, took: null, ...(saved?.state ?? {}) };
+  const st101 = { round: null, mark: null, steps: 0, lazy: false, openedAt: null, ...(saved?.state101 ?? {}) };
   let cache = null; // { v, result } so delayMs and decide agree on one decision per view
 
   function think(view) {
     if (!view || typeof view !== 'object') return null;
     if (cache && cache.v === view.v && view.v !== undefined) return cache.result;
-    const result = plan(view, mem, p, rng, st);
+    // The variant comes from the view's public settings: one brain plays classic or 101.
+    const result = view.settings?.variant === '101' ? plan101(view, mem, p, rng, st101) : plan(view, mem, p, rng, st);
     cache = { v: view.v, result };
     return result;
   }
@@ -108,12 +111,13 @@ export function createBot({ level = DEFAULT_LEVEL, params, seed = 1, saved } = {
       const res = think(view);
       if (!res) return 0;
       let ms = BASE_DELAY[res.kind] * (1 + 0.9 * res.hardness);
+      if (res.first === false) ms *= 0.6;                                        // 101: later steps of a turn
       if (res.kind === 'discard' && view.round.firstTurn[view.you]) ms += 500; // first look at a new hand
       ms *= p.speed * rng.range(0.85, 1.15);
       return Math.round(Math.min(MAX_DELAY, Math.max(MIN_DELAY, ms)));
     },
     snapshot() {
-      return structuredClone({ v: 1, level: lvl, params: p, rng: rng.state(), memory: mem.snapshot(), state: st });
+      return structuredClone({ v: 1, level: lvl, params: p, rng: rng.state(), memory: mem.snapshot(), state: st, state101: st101 });
     },
   };
 }

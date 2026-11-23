@@ -74,7 +74,79 @@ async function playTurns(p, ms) {
   return 'time';
 }
 
-const TABLE_SEL = ['.rack .rt', '#pile', '.seat .av', '.ds .dstack', '.bar .chip', '.top .ibtn', '.ind', '.status'];
+// 101: play my turns through the UI like a player would. Tries, once, taking the left discard and putting it
+// back; opens with "Best opening" + "Open" when the counter allows; lays more sets; drags one tile onto a meld
+// on the table when one fits; discards the last rack tile (confirming the işlek warning when it comes up).
+async function play101(p, ms, stats) {
+  let spent = 0;
+  const st = () => p.evaluate(() => {
+    const f = document.querySelector('.felt'), v = window.__okey.view();
+    const btn = a => { const b = document.querySelector(`#o101:not([hidden]) button[data-a="${a}"]`); return b ? (b.disabled ? 'off' : 'on') : null; };
+    return {
+      draw: f.classList.contains('can-draw'), discard: f.classList.contains('can-discard'),
+      result: !!document.querySelector('#result:not([hidden]) .rv-acts'), tip: !!document.querySelector('#tiplater'), confirm: !!document.querySelector('#cYes'),
+      left: v && v.round ? v.seats[(v.you + 3) % 4].discard.count : 0, opened: v && v.round && v.round.opened ? v.round.opened[v.you] : false,
+      open: btn('open'), lay: btn('lay'), undo: btn('undo'), best: btn('best'),
+    };
+  });
+  while (spent < ms) {
+    const s = await st();
+    if (s.result) return 'result';
+    if (s.tip) await p.click('#tiplater');
+    if (s.confirm) { stats.islek++; await p.click('#cYes'); }
+    else if (s.draw) {
+      if (!stats.took && s.left) {
+        await p.click('.ds.d3'); await p.clock.runFor(300);
+        const u = await st();
+        if (u.undo === 'on') {
+          await p.screenshot({ path: join(SHOTS, 'e2e101-taken.png') });
+          await p.click('#o101 button[data-a="undo"]'); await p.clock.runFor(300);
+          const back = await st();
+          if (back.draw && back.undo == null) stats.took = true; else fail('101: putting the taken tile back did not return to the draw stage');
+        }
+        continue;
+      }
+      await p.click('#pile');
+    } else if (s.discard) {
+      if (!s.opened && s.best) {
+        await p.click('#o101 button[data-a="best"]');
+        const again = await st();
+        if (again.open === 'on') {
+          if (!stats.openShot) { stats.openShot = true; await p.screenshot({ path: join(SHOTS, 'e2e101-open.png') }); }
+          await p.click('#o101 button[data-a="open"]'); await p.clock.runFor(400); stats.opened++;
+          continue;
+        }
+      }
+      if (s.opened && s.lay === 'on') { await p.click('#o101 button[data-a="lay"]'); await p.clock.runFor(400); stats.laid++; continue; }
+      if (s.opened && !stats.added) {
+        const move = await p.evaluate(async () => {
+          const R = await import('/shared/okey101/rules.js'), v = window.__okey.view();
+          const offs = R.layoffs(v.hand, v.round.table, v.round.okey);
+          return offs.length < v.hand.length && offs[0] ? { ...offs[0], before: v.round.table[offs[0].meld].tiles.length } : null;
+        });
+        if (move) {
+          const tile = await (await p.$(`.rack .rt[data-id="${move.tile}"]`)).boundingBox();
+          const meld = await (await p.$(`#melds .mg[data-i="${move.meld}"]`)).boundingBox();
+          const tx = move.side === 'start' ? meld.x + 3 : meld.x + meld.width - 3, ty = meld.y + meld.height / 2;
+          await p.mouse.move(tile.x + tile.width / 2, tile.y + tile.height / 2); await p.mouse.down();
+          await p.mouse.move(tx, ty, { steps: 12 });
+          await p.screenshot({ path: join(SHOTS, 'e2e101-addhint.png') });
+          await p.mouse.up(); await p.clock.runFor(500);
+          const after = await p.evaluate((i) => window.__okey.view().round.table[i].tiles.length, move.meld);
+          if (after === move.before + 1) { stats.added = true; ok('101: dragged a tile onto a table meld (işleme)'); await p.screenshot({ path: join(SHOTS, 'e2e101-added.png') }); }
+          else fail(`101: drag onto meld ${move.meld} did not add the tile`);
+          continue;
+        }
+      }
+      const tiles = await p.$$('.rack .rt:not(.gone)');
+      if (tiles.length) await tiles[tiles.length - 1].dblclick();
+    }
+    await p.clock.runFor(400); spent += 400;
+  }
+  return 'time';
+}
+
+const TABLE_SEL = ['.rack .rt', '#pile', '.seat .av', '.ds .dstack', '.bar .chip', '.top .ibtn', '.ind', '.status', '#o101 button', '#melds'];
 
 if (only !== 'e2e') for (const [w, h] of SIZES) {
   const tag = `${w}x${h}`;
