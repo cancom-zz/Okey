@@ -602,3 +602,4 @@ input.bad,.field input.bad{border-color:#ff8a8a!important;animation:wob .3s}
   .rack .rt{transition:none}
 }
 @keyframes bnfade{0%,100%{opacity:0}10%,85%{opacity:1}}
+.resume{display:block;width:100%;margin-top:8px;padding:8px;border-radius:10px;font-size:13px;font-weight:700;color:var(--gold2);background:rgba(0,0,0,.25);border:1px dashed rgba(241,212,138,.45)}

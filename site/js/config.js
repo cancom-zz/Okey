@@ -37,6 +37,8 @@ export const EMOTES = [
   { id: 'think', e: '🤔' },
   { id: 'hadi', k: 'emote.hadi' },
   { id: 'eyvallah', k: 'emote.eyvallah' },
+  { id: 'luck', k: 'emote.luck' },
+  { id: 'gg', k: 'emote.gg' },
 ];
 
 export const TURN_OPTIONS = [15, 30, 45, 60];

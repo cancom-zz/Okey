@@ -101,6 +101,8 @@ export default {
 
   'emote.hadi': 'Come on!',
   'emote.eyvallah': 'Cheers',
+  'emote.luck': 'Good luck',
+  'emote.gg': 'Good game',
 
   'result.finishTile': 'finishing tile',
   'result.next': 'Next round',

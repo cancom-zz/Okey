@@ -16,18 +16,22 @@ export async function createRoom(settings) {
   return j;
 }
 
+// Practice: LocalTable sits you down, seats three bots, starts, and says hello itself (selfHello).
+// resume: continue the table saved in localStorage after a reload.
 export async function soloTransport(opts) {
   if (!useMock) {
-    try {
-      const m = await import('./local.js');
-      if (m && typeof m.createSoloTable === 'function') {
-        const tr = await m.createSoloTable(opts);
-        if (tr) return tr;
-      }
-    } catch (e) { console.warn('local.js unavailable, using the mock table', e); }
+    const m = await import('./local.js');
+    const tr = m.createSoloTable({ name: opts.player.name, avatar: opts.player.avatar, levels: opts.levels, settings: opts.settings, resume: !!opts.resume });
+    tr.selfHello = true;
+    return tr;
   }
   const { createMockTable } = await import('./mock.js');
   return createMockTable({ code: 'SOLO', scenario: mockScenario, fast: mockFast, settings: opts && opts.settings });
+}
+
+export async function hasSoloTable() {
+  if (useMock) return false;
+  try { return (await import('./local.js')).hasSoloTable(); } catch { return false; }
 }
 
 export async function roomTransport(code) {
@@ -35,6 +39,9 @@ export async function roomTransport(code) {
     const { createMockTable } = await import('./mock.js');
     return createMockTable({ code, scenario: mockScenario || 'lobby', fast: mockFast });
   }
+  // Ask first, so a dead link gets a clear message instead of a socket that never opens.
+  const res = await fetch(`/api/rooms/${encodeURIComponent(code)}`).catch(() => null);
+  if (res && res.status === 404) { const e = new Error('noRoom'); e.code = 'noRoom'; throw e; }
   return wsTransport(code);
 }
 
@@ -59,7 +66,9 @@ function wsTransport(code) {
     ws.onclose = ev => {
       clearInterval(pingT);
       if (closed) return;
-      if (ev && (ev.code === 4404 || ev.code === 4400)) { closed = true; status('gone'); return; }
+      // 4004 room gone, 4001 room full, 4002 this identity opened the table elsewhere: don't fight over it
+      const final = { 4004: 'gone', 4404: 'gone', 4001: 'full', 4002: 'replaced' }[ev && ev.code];
+      if (final) { closed = true; status(final); return; }
       status('reconnecting'); schedule();
     };
     ws.onerror = () => { /* onclose follows */ };

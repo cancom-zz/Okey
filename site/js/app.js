@@ -16,22 +16,23 @@ const screen = () => $('#screen');
 let room = null;
 
 class Room {
-  constructor({ code, solo, level }) {
-    this.code = code; this.solo = solo; this.level = level;
+  constructor({ code, solo, level, resume = false }) {
+    this.code = code; this.solo = solo; this.level = level; this.resume = resume;
     this.view = null; this.q = []; this.running = false; this.ui = null; this.uiKind = null; this.setupV = -1;
     this.tr = null; this.closed = false;
   }
   async open() {
     try {
       this.tr = this.solo
-        ? await soloTransport({ player: player(), lang: getLang(), levels: [this.level, this.level, this.level], level: this.level })
+        ? await soloTransport({ player: player(), lang: getLang(), levels: [this.level, this.level, this.level], settings: { turnSeconds: 0 }, resume: this.resume })
         : await roomTransport(this.code);
-    } catch (e) { console.error(e); toast(t('err.connect'), 'err'); go('#/'); return; }
+    } catch (e) { console.error(e); toast(t(e && e.code === 'noRoom' ? 'err.noRoom' : 'err.connect'), 'err', 4000); go('#/'); return; }
     if (this.closed) { this.tr.close(); return; }
     this.tr.onmessage = m => this.receive(m);
     this.tr.onstatus = s => this.status(s);
     const hello = () => this.tr.send({ t: 'hello', player: player(), lang: getLang() });
-    if ('onopen' in this.tr) { this.tr.onopen = hello; this.tr.connect(); } else { this.tr.connect(); hello(); }
+    if (this.tr.selfHello) this.tr.connect();
+    else if ('onopen' in this.tr) { this.tr.onopen = hello; this.tr.connect(); } else { this.tr.connect(); hello(); }
     this.showWaiting();
   }
   showWaiting() {
@@ -42,20 +43,16 @@ class Room {
     const el = $('#netstat');
     if (s === 'reconnecting') { el.hidden = false; el.textContent = t('net.reconnecting'); }
     else if (s === 'open') { el.hidden = true; }
-    else if (s === 'gone') { toast(t('err.noRoom'), 'err', 4000); go('#/'); }
+    else if (s === 'gone' || s === 'full' || s === 'replaced') { toast(t({ gone: 'err.noRoom', full: 'err.full', replaced: 'err.replaced' }[s]), 'err', 4500); go('#/'); }
   }
   send(m) { if (this.tr && !this.closed) this.tr.send(m); }
   receive(m) { if (this.closed) return; this.q.push(m); if (!this.running) this.pump(); }
   async pump() {
     this.running = true;
     while (this.q.length && !this.closed) {
-      let m = this.q.shift();
-      // catching up: if several views are queued, jump to the latest (its events are lost, the state is not)
-      if (m.t === 'view' && this.q.filter(x => x.t === 'view').length >= 4) {
-        const views = [m, ...this.q.filter(x => x.t === 'view')];
-        this.q = this.q.filter(x => x.t !== 'view');
-        m = { t: 'view', view: views[views.length - 1].view, events: [] };
-      }
+      const m = this.q.shift();
+      // a lobby view with a newer view queued behind it has nothing to show (practice sets up in a burst)
+      if (m.t === 'view' && m.view && m.view.phase === 'lobby' && this.q.some(x => x.t === 'view')) continue;
       try { await this.handle(m); } catch (e) { console.error(e); }
     }
     this.running = false;
@@ -65,7 +62,7 @@ class Room {
       const v = m.view; this.view = v;
       if (v.code && !this.solo && v.code !== this.code) this.code = v.code;
       if (v.phase === 'lobby') {
-        if (this.solo) { this.soloSetup(v); this.showWaiting(); return; }
+        if (this.solo) { if (!this.tr.selfHello) this.soloSetup(v); this.showWaiting(); return; }
         if (this.uiKind !== 'lobby') { this.swap('lobby'); }
         this.ui.update(v);
         topbar();

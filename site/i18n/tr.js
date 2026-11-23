@@ -107,6 +107,8 @@ export default {
 
   'emote.hadi': 'Hadi!',
   'emote.eyvallah': 'Eyvallah',
+  'emote.luck': 'Bol şans',
+  'emote.gg': 'Güzel oyun',
 
   // result
   'result.finishTile': 'bitiren taş',

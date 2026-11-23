@@ -28,7 +28,7 @@ import * as botLib from './bots/index.js';
 export const AVATARS = ['🦊', '🐻', '🐱', '🦁', '🐼', '🐯', '🐸', '🦉', '🐢', '🐧', '🐙', '🦄', '🐝', '🐺', '🦜', '🐨', '🌻', '☕', '🎩', '⚓'];
 export const BOT_AVATAR = { cirak: '🐣', kalfa: '🦊', usta: '🦉', uzman: '🐺' };
 export const LEVELS = ['cirak', 'kalfa', 'usta', 'uzman'];
-export const EMOTES = ['clap', 'smile', 'wow', 'fire', 'think', 'hadi', 'eyvallah'];
+export const EMOTES = ['clap', 'smile', 'wow', 'fire', 'think', 'hadi', 'eyvallah', 'luck', 'gg'];
 // Custom bot params: [min, max]. memory stays below perfect and decay above zero (DESIGN.md "Bots").
 // The bots clamp further (site/shared/bots resolveParams); this only rejects garbage.
 export const BOT_PARAM_RANGES = {
