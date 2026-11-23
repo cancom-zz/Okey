@@ -35,6 +35,7 @@ site/                      static, public
   i18n/tr.js, i18n/en.js   string tables (export default { key: 'text' })
   shared/okey/             rules engine, pure, used by BOTH the worker and the client
     tiles.js rules.js game.js rng.js index.js
+  shared/okey101/          101 Okey engine, same API shape (game.js rules.js index.js; tiles/rng from okey/)
   shared/bots/             bot brains, pure (index.js exports createBot)
   shared/host.js           TableHost: the room protocol (seats, bots, timers, views) with no I/O
   js/local.js              LocalTable: runs a TableHost in the browser for solo practice vs bots
@@ -336,7 +337,7 @@ Semantics (TableHost):
   `matchEnd` goes back to the lobby. The first human to sit is the host. The host passes to another human
   (connected first) when the host stands up, or to a connected human when the host disconnects.
   `removeBot` also removes a human whose socket is gone (so the table can fill again). `start` needs 4 seats.
-- `settings` is a partial update: `turnSeconds` 0 (no timer) or 10–120; `rounds` null/0 (play to 0) or 1–99;
+- `settings` is a partial update (`variant` `'classic'` | `'101'`, see "101 Okey" for its keys): `turnSeconds` 0 (no timer) or 10–120; `rounds` null/0 (play to 0) or 1–99;
   `startPoints` 1–99; `scoring` keys -> ints 0–99. Bot `params` are checked against `BOT_PARAM_RANGES`.
 - `act`: `v` must be at least the version of the last game change (and not above the current one), else
   `stale`. Engine errors come back as their codes. Any `act`, `next` or `emote` clears `away`.
@@ -430,6 +431,103 @@ that finishes or is an okey, never discards an okey otherwise, never throws back
 
 Strength (test/bots.test.mjs, 160 rounds, one bot of each level per table, every level in every seat):
 round wins Çırak 9%, Kalfa 16%, Usta 34%, Uzman 37%. (800 rounds: 12 / 20 / 32 / 33%.)
+
+## 101 Okey (`site/shared/okey101/`)
+
+A second engine with the **same API shape** as the classic `game.js` (`newMatch, startRound, nextRound, act,
+viewFor, eventsFor, timeoutAction, isLegal, tileLocations, GameError, DEFAULT_SETTINGS`), so TableHost picks
+it by `settings.variant` (`'classic'` default | `'101'`). Tiles, indicator, okey, false jokers and the
+classic `validSet/isPair/arrange` are imported from `okey/` (not copied). Every rule choice is also listed at
+the top of `okey101/game.js`. Lower is better: scores are penalty points starting at 0.
+
+**Settings** (`DEFAULT_SETTINGS`, house rules are flags; partial overrides merge):
+
+```js
+{ variant: '101', turnSeconds: 30, rounds: 9 /* 1..11, always fixed */, startPoints: 0,
+  openingValue: 101, minPairs: 5, aceHighValue: 1 /* 1 | 11 | 14 */, raiseOpening: false,
+  pairsOpening: true, pairsOnly: true, pairsCanAdd: true, addOnOpeningTurn: true, okeySwap: true,
+  scoring: { finish: 101, unopened: 202, okeyInHand: 101, islek: 101, okeyDiscard: 0 },
+  doubles: { okeyFinish: true, elden: true, pairsFinish: true, pairsOpener: true } }
+```
+
+**Rules.**
+
+- Deal: dealer 22 tiles, others 21; indicator out of the pile as classic → the pile starts at **20**. The
+  dealer starts by discarding; dealer rotates; turn order and draw (pile, or the previous player's discard top)
+  as classic. Stages: `'draw'` → `'discard'` (drawn: may play to the table, must end the turn by discarding).
+- Sets: classic runs/groups (12-13-1 yes, 13-1-2 no), okeys wild, false jokers = the okey face.
+- **Opening** (one `layDown` action): sets whose values total ≥ `openingValue` (a tile counts its number, an
+  okey the number it stands for, the 1 after 13 counts `aceHighValue`), or ≥ `minPairs` pairs (identical
+  faces; an okey pairs with anything) when `pairsOpening`. Sets and pairs never mix. `raiseOpening`: each
+  later opener must beat the highest opening of the same kind so far (value + 1 / one more pair).
+- **After opening:** sets openers lay only sets; pairs openers only pairs (`pairsOnly`) and may add to runs and
+  groups (`pairsCanAdd`). Anyone opened may add tiles (**işleme**) to ANY run/group on the table (either end of
+  a run, a group up to 4) and take an okey back (`okeySwap`) with the exact tile it stands for (run: its
+  position; pair: the partner's face; group: any color not in it); the okey goes to the hand. Allowed on the
+  opening turn too (`addOnOpeningTurn`). Unopened players cannot touch the table. A table action must leave at
+  least one tile in hand (`mustKeepOne`).
+- **Taking the discard** (`draw` from `'discard'`): the tile becomes `round.taken` (public) and must reach the
+  table this turn. Until it leaves the hand, `discard`/`finish` fail with `mustUseTaken`; a player who had not
+  opened must open with it (an opening without it is `mustUseTaken`). `undoTake` (only while it is still in
+  hand) puts it back on the stack and restores the hand, the table and the opening exactly as before the take
+  (stage back to `'draw'`), so nobody gets stuck.
+- **Penalties during play** (to the discarder at once, `penalty` + `score` events): an **işlek** tile (could
+  be added to a run/group on the table, or could take an okey back) costs `scoring.islek`, for every player,
+  opened or not. An okey is işlek whenever a run or group can take it. `scoring.okeyDiscard` (0 = off) is an
+  extra flat penalty for any okey discard; an okey discard pays the larger, never both. The finishing discard
+  is never penalized.
+- **Finishing:** discarding your last tile. Multiplier m (stacking): ×2 okey as last tile, ×2 **elden**
+  (opened in this same turn), ×2 finisher opened with pairs (each a `doubles` flag).
+- **Scoring:** finisher −`finish`×m; unopened `unopened`×m; opened: hand value×m (a tile counts its number,
+  a false joker the okey's number, an okey `okeyInHand`), a pairs opener's ×2 again (`doubles.pairsOpener`).
+  Pile exhaustion (same trigger as classic): no finisher, m = 1, unopened 202, opened hand value (pairs ×2).
+- **Match:** exactly `rounds` rounds; lowest total wins; ties share. No indicator showing in 101
+  (`showIndicator` → `cannotShow`).
+
+**Actions:** classic `draw` / `discard` / `finish` (`finish` = discarding the last tile), plus
+`{ type: 'layDown', groups: [ids[] | { kind?: 'run' | 'group', tiles }] }` (a run's order decides where an
+okey stands when it is a valid run in that order; otherwise the highest-value reading),
+`{ type: 'addToSet', tile, meld, side?: 'start' | 'end' }`, `{ type: 'swapOkey', tile, meld, okey? }`,
+`{ type: 'undoTake' }`. Error codes added: `notOpened`, `openTooLow`, `tooFewPairs`, `badSet`, `cannotAdd`,
+`cannotSwap`, `mustUseTaken`, `noTake`, `mustKeepOne`, `setsOnly`, `pairsOnly`, `notThisTurn`.
+
+**Events** (routing as classic): `roundStart`, `dealt`, `draw` (pile only), `take { seat, tile }`,
+`undoTake { seat, tile }`, `layDown { seat, melds: [{ index, owner, kind, tiles, color?, start?, num? }],
+opening: null | { kind, value, pairs } }`, `addToSet { seat, tile, meld, side, tiles }`,
+`swapOkey { seat, tile, okey, meld }`, `discard`, `penalty { seat, reason: 'islek' | 'okeyDiscard', tile,
+points }`, `finish { seat, tile, kind: 'sets' | 'pairs', okeyFinish, elden, multiplier, hands }`,
+`pileEmpty { hands }`, `score { deltas, scores }`, `matchEnd`.
+
+**State and view.** `match.variant = '101'`; `round` adds `table` (melds: `{ owner, kind: 'run' | 'group' |
+'pair', tiles, color?, start? (runs: position p is start + p, 14 = the 1 after 13), num? (groups) }`),
+`opened [false | 'sets' | 'pairs' ×4]`, `openings [{ kind, value, pairs, turn } | null ×4]`, `highest`,
+`penalties` (this round's), `taken`, and the secret `undo`. `tileLocations` counts table melds too. The view
+is the classic view plus, in `round`: `table`, `opened`, `openings [{ kind, value, pairs } | null]`,
+`required { value, pairs }` (the opening needed now), `penalties`, `taken`; `seats[].score` = penalty totals;
+`result` adds `elden`, `multiplier`, `opened`, `penalties` (`deltas` = round-end scoring only, `groups` null;
+`history[].deltas` include the penalties). Never: other hands, the pile, buried discards, `undo`.
+
+**Solver helpers** (`okey101/rules.js`, for the client, auto-play and future 101 bots): `meldOf(spec, okey,
+{ aceHighValue, anyOrder })`, `pairOf`, `meldValue`, `tileValue`, `handValue`, `addTile(meld, tile, okey,
+side)`, `swapTile(meld, tile, okey, which?)`, `layoffs(hand, table, okey) -> [{ tile, meld, side }]`,
+`swaps(hand, table, okey) -> [{ tile, meld, okey }]`, `isIslek(tile, table, okey, { swap })`,
+`bestSets(hand, okey, { aceHighValue, keep = 1 }) -> { groups, value, tiles }` (max value, then tiles; memoized
+search on face counts, ~0.3 ms average on 22 tiles, worst cases ≈ 20 ms), `bestPairs(hand, okey, { keep })`,
+`bestOpening(hand, okey, { allowPairs, aceHighValue, minValue, minPairs }) -> { sets, pairs, best }`.
+`game.js` also exports `requiredOpening(round, settings)` and `pickDiscard(match, seat)`.
+
+**Auto-play** (`timeoutAction`, one step per call; the host calls it until the turn passes): draw from the
+pile; give back a take it cannot lay off (`undoTake`); open if possible (sets, else pairs); once opened take
+okeys back, lay new sets/pairs, add tiles (okeys only with ≤ 3 tiles left); finish with the last tile; else
+discard the highest-value `arrange` leftover, never an işlek tile or an okey if avoidable.
+
+**Host.** `cleanSettings` validates `variant` (switching variant drops the other variant's scoring/rules;
+101: `rounds` 1–11, default 9 when switching from "play to 0"; `scoring` keys above, ints 0–999; `doubles`
+booleans; the rule flags; `openingValue` 1–300, `minPairs` 2–11, `aceHighValue` 1/11/14). `cleanAction`
+knows the 101 actions. The view's `settings` always has `variant` (101 adds its rule fields). `onResult`
+summaries carry `variant`. **There are no 101 bots yet:** a bot seat in a 101 match has no brain and is
+auto-played with `timeoutAction` (900 ms for its first step, 450 ms per later step). A timed-out human's whole
+turn is auto-played (up to 64 steps).
 
 ## Statistics and achievements (phase 2)
 
