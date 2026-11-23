@@ -126,9 +126,10 @@ function asGroup(ids, okey) {
  * Parse a set: `spec` is an array of tile ids, or `{ kind?: 'run' | 'group', tiles }`.
  * Runs: when the ids, in the order given, form a run, that run is used (so the client decides where an okey
  * stands); otherwise every placement is considered. The highest-value interpretation wins (ties: run).
+ * With `anyOrder` the given order is ignored (the best value of the tiles, wherever the okeys stand).
  * -> { kind, tiles, color?, start?, num?, value } | null.
  */
-export function meldOf(spec, okey, { aceHighValue = 1 } = {}) {
+export function meldOf(spec, okey, { aceHighValue = 1, anyOrder = false } = {}) {
   let kind = null;
   let ids = spec;
   if (spec && !Array.isArray(spec) && typeof spec === 'object') {
@@ -139,7 +140,7 @@ export function meldOf(spec, okey, { aceHighValue = 1 } = {}) {
   if (!Array.isArray(ids) || ids.length < 3 || ids.length > 13 || !distinct(ids)) return null;
   const opts = [];
   if (kind !== 'group') {
-    const ordered = orderedRun(ids, okey);
+    const ordered = anyOrder ? null : orderedRun(ids, okey);
     if (ordered) opts.push(ordered);
     else opts.push(...anyRuns(ids, okey));
   }

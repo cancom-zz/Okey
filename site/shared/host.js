@@ -22,6 +22,7 @@
 // their seat. Bots get the same projection and the same event stream as a human in their seat.
 
 import * as engineLib from './okey/index.js';
+import * as engine101Lib from './okey101/index.js';
 import * as botLib from './bots/index.js';
 
 // Keep these in step with site/js/config.js (a test checks it).
@@ -46,7 +47,14 @@ export const OFFLINE_TURN_SECONDS = 30;   // turn limit for a disconnected human
 export const EMOTE_GAP_MS = 1_500;
 export const RATE = { burst: 20, perSec: 5 };
 export const MAX_MESSAGE_CHARS = 2_000;
-export const DEFAULT_SETTINGS = { turnSeconds: 30, rounds: null, startPoints: 20 };
+export const DEFAULT_SETTINGS = { variant: 'classic', turnSeconds: 30, rounds: null, startPoints: 20 };
+// Game variants: 'classic' (site/shared/okey) and '101' (site/shared/okey101). There are no 101 bots yet: a bot
+// seat in a 101 match plays the engine's timeoutAction (auto-play), one step at a time.
+export const VARIANTS = ['classic', '101'];
+const RULES_101 = ['raiseOpening', 'pairsOpening', 'pairsOnly', 'pairsCanAdd', 'addOnOpeningTurn', 'okeySwap'];
+const SCORING_101 = ['finish', 'unopened', 'okeyInHand', 'islek', 'okeyDiscard'];
+const DOUBLES_101 = ['okeyFinish', 'elden', 'pairsFinish', 'pairsOpener'];
+const ACE_101 = [1, 11, 14];
 
 const ID = /^[A-Za-z0-9_-]{8,64}$/;
 const LANG = /^[a-z]{2}(-[A-Za-z]{2})?$/;
@@ -77,6 +85,35 @@ export function cleanAction(a) {
     case 'draw': return a.from === 'pile' || a.from === 'discard' ? { type: 'draw', from: a.from } : null;
     case 'discard': return isTile(a.tile) ? { type: 'discard', tile: a.tile } : null;
     case 'showIndicator': return { type: 'showIndicator' };
+    // 101 Okey
+    case 'undoTake': return { type: 'undoTake' };
+    case 'layDown': {
+      if (!Array.isArray(a.groups) || a.groups.length < 1 || a.groups.length > 11) return null;
+      let total = 0;
+      const groups = [];
+      for (const g of a.groups) {
+        const tiles = isObj(g) ? g.tiles : g;
+        const kind = isObj(g) ? g.kind : undefined;
+        if (kind !== undefined && kind !== 'run' && kind !== 'group') return null;
+        if (!Array.isArray(tiles) || tiles.length < 2 || tiles.length > 13 || !tiles.every(isTile)) return null;
+        total += tiles.length;
+        groups.push(kind ? { kind, tiles: tiles.slice() } : tiles.slice());
+      }
+      return total <= 22 ? { type: 'layDown', groups } : null;
+    }
+    case 'addToSet': case 'swapOkey': {
+      if (!isTile(a.tile) || !isInt(a.meld, 0, 63)) return null;
+      const out = { type: a.type, tile: a.tile, meld: a.meld };
+      if (a.type === 'addToSet' && a.side !== undefined && a.side !== null) {
+        if (a.side !== 'start' && a.side !== 'end') return null;
+        out.side = a.side;
+      }
+      if (a.type === 'swapOkey' && a.okey !== undefined && a.okey !== null) {
+        if (!isTile(a.okey)) return null;
+        out.okey = a.okey;
+      }
+      return out;
+    }
     case 'finish': {
       if (!isTile(a.tile)) return null;
       const out = { type: 'finish', tile: a.tile };
@@ -113,9 +150,43 @@ export function cleanBotParams(p) {
 export function cleanSettings(s, base = DEFAULT_SETTINGS) {
   if (s === undefined || s === null) return clone(base);
   if (!isObj(s)) return null;
-  const out = clone(base);
+  let out = clone(base);
+  if (!VARIANTS.includes(out.variant)) out.variant = 'classic';
+  if (s.variant !== undefined) {
+    if (!VARIANTS.includes(s.variant)) return null;
+    // Switching variants drops the other variant's scoring/rules (each engine fills in its own defaults).
+    if (s.variant !== out.variant) {
+      out = { variant: s.variant, turnSeconds: out.turnSeconds, rounds: out.rounds, startPoints: out.startPoints };
+      if (s.variant === '101' && !isInt(out.rounds, 1, 11)) out.rounds = 9;
+    }
+  }
+  const is101 = out.variant === '101';
   for (const [k, v] of Object.entries(s)) {
-    if (k === 'turnSeconds') {
+    if (k === 'variant') continue;
+    if (is101 && k === 'rounds') {
+      if (!isInt(v, 1, 11)) return null; // 101: a fixed number of rounds
+      out.rounds = v;
+    } else if (is101 && k === 'scoring') {
+      if (!isObj(v)) return null;
+      for (const [sk, sv] of Object.entries(v)) if (!SCORING_101.includes(sk) || !isInt(sv, 0, 999)) return null;
+      out.scoring = { ...(out.scoring || {}), ...v };
+    } else if (is101 && k === 'doubles') {
+      if (!isObj(v)) return null;
+      for (const [dk, dv] of Object.entries(v)) if (!DOUBLES_101.includes(dk) || typeof dv !== 'boolean') return null;
+      out.doubles = { ...(out.doubles || {}), ...v };
+    } else if (is101 && RULES_101.includes(k)) {
+      if (typeof v !== 'boolean') return null;
+      out[k] = v;
+    } else if (is101 && k === 'openingValue') {
+      if (!isInt(v, 1, 300)) return null;
+      out.openingValue = v;
+    } else if (is101 && k === 'minPairs') {
+      if (!isInt(v, 2, 11)) return null;
+      out.minPairs = v;
+    } else if (is101 && k === 'aceHighValue') {
+      if (!ACE_101.includes(v)) return null;
+      out.aceHighValue = v;
+    } else if (k === 'turnSeconds') {
       if (!(v === 0 || isInt(v, 10, 120))) return null;
       out.turnSeconds = v;
     } else if (k === 'rounds') {
@@ -161,7 +232,7 @@ const emptySeat = () => ({ kind: 'empty' });
 
 export class TableHost {
   constructor({ code, settings, now, schedule, send, close, rng, onResult, saved, engine, createBot }) {
-    this.engine = engine || engineLib;
+    this._engine = engine || null; // injected (tests): used for every variant
     this.createBot = createBot || botLib.createBot;
     this.now = now || (() => Date.now());
     this._schedule = schedule || (() => {});
@@ -199,6 +270,23 @@ export class TableHost {
     }
   }
 
+  /** The rules engine of the current match (or of the settings, before a match). */
+  get engine() {
+    if (this._engine) return this._engine;
+    const variant = this.match ? this.match.settings?.variant : this.settings?.variant;
+    return variant === '101' ? engine101Lib : engineLib;
+  }
+
+  get is101() {
+    return (this.match ? this.match.settings?.variant : this.settings?.variant) === '101';
+  }
+
+  /** A bot brain for a seat, or null in a 101 match (no 101 bots yet: the seat is auto-played). */
+  makeBot(seat, saved) {
+    if (this.is101) return null;
+    return this.createBot({ level: seat.level, params: seat.params, seed: seat.seed, ...(saved !== undefined ? { saved } : {}) });
+  }
+
   // ---------------------------------------------------------------- persistence
 
   snapshot() {
@@ -219,9 +307,7 @@ export class TableHost {
       this[k] = d[k];
     }
     // No socket is attached after a restore: the transport calls bind() for each live one before wake().
-    this.bots = d.seats.map((seat, i) => (seat.kind === 'bot' && this.match
-      ? this.createBot({ level: seat.level, params: seat.params, seed: seat.seed, saved: d.bots?.[i] ?? undefined })
-      : null));
+    this.bots = d.seats.map((seat, i) => (seat.kind === 'bot' && this.match ? this.makeBot(seat, d.bots?.[i] ?? undefined) : null));
     this.dirty = false;
   }
 
@@ -499,7 +585,7 @@ export class TableHost {
     this.bots = this.seats.map((s, i) => {
       if (s.kind !== 'bot') return null;
       s.seed = this.rng.int(0x7fffffff);
-      return this.createBot({ level: s.level, params: s.params, seed: s.seed });
+      return this.makeBot(s);
     });
     for (const s of this.seats) if (s.kind === 'human') { s.away = false; s.timeouts = 0; }
     const match = E.newMatch({
@@ -664,9 +750,15 @@ export class TableHost {
    */
   planBot(seat) {
     const bot = this.bots[seat];
-    const view = this.botView(seat);
     let ms = 800;
     let action = null;
+    if (!bot) {
+      // 101 (no bot brain yet): auto-play one step at a time, a little faster after the first.
+      this.botAction = null;
+      this.deadline = this.now() + (this.botActs === 0 ? 900 : 450);
+      return;
+    }
+    const view = this.botView(seat);
     try {
       const d = bot.delayMs(view);
       if (Number.isFinite(d)) ms = d;
@@ -712,7 +804,8 @@ export class TableHost {
     s.away = true;
     s.timeouts = (s.timeouts || 0) + 1;
     const key = this.turnKey;
-    for (let i = 0; i < 3 && this.phase === 'playing' && this.turnKey === key; i++) this.autoStep(seat);
+    // A classic turn is 2 steps; a 101 turn can be many (draw, open, add, ..., discard).
+    for (let i = 0; i < 64 && this.phase === 'playing' && this.turnKey === key; i++) this.autoStep(seat);
   }
 
   autoStep(seat) {
@@ -778,7 +871,7 @@ export class TableHost {
     const isRound = type === 'round';
     const winners = isRound ? (Number.isInteger(info.winner) ? [info.winner] : []) : e.winners.slice();
     const summary = {
-      type, code: this.code, match: this.matchNo, round: info.round ?? null, at: this.now(),
+      type, code: this.code, variant: this.is101 ? '101' : 'classic', match: this.matchNo, round: info.round ?? null, at: this.now(),
       winner: isRound ? info.winner ?? null : null,
       kind: isRound ? info.kind ?? null : null,
       okeyFinish: isRound ? !!info.okeyFinish : false,
@@ -839,7 +932,19 @@ export class TableHost {
   viewFor(seat) {
     const base = this.match ? this.engine.viewFor(this.match, seat) : null;
     const st = this.settings;
-    const settings = { turnSeconds: st.turnSeconds, rounds: st.rounds ?? null, startPoints: st.startPoints, scoring: clone(base?.settings?.scoring ?? st.scoring ?? {}) };
+    const is101 = this.is101;
+    const settings = { variant: is101 ? '101' : 'classic', turnSeconds: st.turnSeconds, rounds: st.rounds ?? null, startPoints: st.startPoints, scoring: clone(base?.settings?.scoring ?? st.scoring ?? {}) };
+    if (is101) {
+      const d = engine101Lib.DEFAULT_SETTINGS;
+      const src = base?.settings ?? { ...d, ...st, scoring: { ...d.scoring, ...st.scoring }, doubles: { ...d.doubles, ...st.doubles } };
+      settings.startPoints = 0;
+      settings.scoring = {};
+      for (const k of SCORING_101) settings.scoring[k] = Number.isInteger(src.scoring?.[k]) ? src.scoring[k] : d.scoring[k];
+      settings.doubles = {};
+      for (const k of DOUBLES_101) settings.doubles[k] = typeof src.doubles?.[k] === 'boolean' ? src.doubles[k] : d.doubles[k];
+      for (const k of RULES_101) settings[k] = typeof src[k] === 'boolean' ? src[k] : d[k];
+      for (const k of ['openingValue', 'minPairs', 'aceHighValue']) settings[k] = Number.isInteger(src[k]) ? src[k] : d[k];
+    }
     const seats = this.seats.map((s, i) => {
       const b = base?.seats?.[i] || {};
       const top = b.discard?.top;
@@ -850,7 +955,7 @@ export class TableHost {
         connected: this.isConnected(i),
         away: s.kind === 'human' ? !!s.away : false,
         bot: s.kind === 'bot' ? { level: s.level } : null,
-        score: Number.isFinite(b.score) ? b.score : st.startPoints,
+        score: Number.isFinite(b.score) ? b.score : settings.startPoints,
         handCount: Number.isInteger(b.handCount) ? b.handCount : 0,
         discard: { top: isTile(top) ? top : null, count: Number.isInteger(b.discard?.count) ? b.discard.count : 0 },
         showedIndicator: !!b.showedIndicator,
@@ -868,6 +973,21 @@ export class TableHost {
         turnEndsAt: this.phase === 'playing' ? this.turnEndsAt : null,
         firstTurn: Array.isArray(r.firstTurn) ? r.firstTurn.map(Boolean) : [false, false, false, false],
       };
+      if (is101) {
+        // Public 101 state: table melds, who opened (and with what), the opening needed, penalties, the take.
+        const seat4 = (a, f) => [0, 1, 2, 3].map((i) => f(Array.isArray(a) ? a[i] : undefined));
+        round.table = (Array.isArray(r.table) ? r.table : []).map((m) => {
+          const out = { owner: m.owner, kind: m.kind, tiles: (m.tiles || []).filter(isTile) };
+          if (m.kind === 'run') { out.color = m.color; out.start = m.start; }
+          if (m.kind === 'group') out.num = m.num;
+          return out;
+        });
+        round.opened = seat4(r.opened, (o) => (o === 'sets' || o === 'pairs' ? o : false));
+        round.openings = seat4(r.openings, (o) => (o ? { kind: o.kind, value: o.value, pairs: o.pairs } : null));
+        round.required = { value: r.required?.value ?? null, pairs: r.required?.pairs ?? null };
+        round.penalties = seat4(r.penalties, (p) => (Number.isFinite(p) ? p : 0));
+        round.taken = isTile(r.taken) ? r.taken : null;
+      }
     }
     let result = null;
     if (base?.result && (this.phase === 'roundEnd' || this.phase === 'matchEnd')) {
@@ -877,6 +997,11 @@ export class TableHost {
         groups: clone(r.groups ?? null), hands: clone(r.hands ?? null), deltas: clone(r.deltas ?? null),
         scores: clone(r.scores ?? null), turns: clone(r.turns ?? null),
       };
+      if (is101) {
+        Object.assign(result, {
+          elden: !!r.elden, multiplier: r.multiplier ?? 1, opened: clone(r.opened ?? null), penalties: clone(r.penalties ?? null),
+        });
+      }
     }
     const winners = this.phase === 'matchEnd' && Array.isArray(base?.winners) ? base.winners.slice() : null;
     const hand = seat !== null && Array.isArray(base?.hand) ? base.hand.filter(isTile) : null;
