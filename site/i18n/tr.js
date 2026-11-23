@@ -1,0 +1,258 @@
+// Türkçe (birincil dil). Her görünen metin buradan gelir.
+const T = (c, n) => `<span class="tile c${c}"><b>${n}</b><i></i></span>`;
+
+export default {
+  brand: 'Okey',
+  close: 'Kapat', on: 'Açık', off: 'Kapalı', save: 'Kaydet', cancel: 'Vazgeç',
+  'top.back': 'Geri', 'top.mute': 'Sesi kapat', 'top.unmute': 'Sesi aç',
+  'unit.sec': 'sn',
+
+  // home
+  'home.tagline': 'Klasik Türk okeyi. Arkadaşlarınla bir link ile ya da botlara karşı.',
+  'home.solo': 'Botlara karşı oyna',
+  'home.soloSub': 'Hemen başla · pratik masası',
+  'home.level': 'Rakipler',
+  'home.friends': 'Arkadaşlarla oyna',
+  'home.friendsSub': 'Masa kur, linki paylaş',
+  'home.codePh': 'Masa kodu ile katıl',
+  'home.codeLabel': 'Masa kodu',
+  'home.join': 'Katıl',
+  'home.badCode': 'Masa kodu 6 karakter olmalı.',
+  'home.foot': 'Reklam yok · ödeme yok · hesap yok',
+  'home.tipFoot': 'bahşişle ayakta ☕',
+
+  // waiting / network
+  'wait.solo': 'Masa hazırlanıyor…',
+  'wait.connecting': 'Masaya bağlanılıyor…',
+  'net.reconnecting': 'Bağlantı koptu, yeniden bağlanıyor…',
+
+  // levels
+  'level.cirak': 'Çırak', 'level.kalfa': 'Kalfa', 'level.usta': 'Usta', 'level.uzman': 'Uzman',
+  'leveld.cirak': 'Yeni öğreniyor, çok unutur.',
+  'leveld.kalfa': 'Fena değil, arada dalar.',
+  'leveld.usta': 'Güçlü, attıklarını hatırlar.',
+  'leveld.uzman': 'Çok güçlü, ama o da unutur.',
+
+  // lobby
+  'lobby.table': 'Masa',
+  'lobby.copy': 'Kopyala',
+  'lobby.share': 'Paylaş',
+  'lobby.copied': 'Link kopyalandı',
+  'lobby.shareText': 'Okey masama gel!',
+  'lobby.empty': 'Boş koltuk',
+  'lobby.addBot': '+ Bot ekle',
+  'lobby.sit': 'Otur',
+  'lobby.host': 'Masa sahibi',
+  'lobby.you': 'Sen',
+  'lobby.ready': 'Hazır',
+  'lobby.removeBot': 'Botu kaldır',
+  'lobby.remove': 'Kaldır',
+  'lobby.turnTime': 'Hamle süresi',
+  'lobby.length': 'Maç',
+  'lobby.rounds': '{n} el',
+  'lobby.toZero': 'Sıfıra kadar',
+  'lobby.leave': 'Ayrıl',
+  'lobby.start': 'Oyunu başlat',
+  'lobby.needFour': '{n} koltuk boş',
+  'lobby.pickSeat': 'Boş bir koltuğa otur.',
+  'lobby.waitHost': 'Masa sahibinin başlatması bekleniyor…',
+  'lobby.seatN': '{n}. koltuk',
+
+  // bots
+  'bot.title': 'Bot ekle · {seat}',
+  'bot.custom': 'Özel ayarlar',
+  'bot.add': 'Botu otur',
+  'bot.p.memory': 'Hafıza',
+  'bot.p.defense': 'Savunma',
+  'bot.p.lookahead': 'İleriyi görme',
+  'bot.p.takeDiscard': 'Yerden alma',
+  'bot.p.pairsBias': 'Çifte yatkınlık',
+  'bot.p.blunder': 'Hata payı',
+  'bot.p.speed': 'Düşünme süresi',
+
+  // table
+  'table.discardHere': 'at',
+  'table.takeHere': 'al',
+  'table.pile': 'Ortadaki deste: taş çek',
+  'table.okey': 'okey',
+  'table.indicator': 'gösterge',
+  'table.sortRuns': 'Seri diz',
+  'table.sortPairs': 'Çift diz',
+  'table.showIndicator': 'Göstergeyi göster',
+  'table.emotes': 'Tepki gönder',
+  'table.away': 'uzakta',
+  'table.offline': 'bağlı değil',
+  'placard.practice': 'Pratik masası',
+  'placard.table': 'Masa {code}',
+  'placard.round': '{n}. EL',
+  'placard.turn': 'Hamle {s} sn',
+  'placard.noClock': 'Süre yok',
+  'placard.rounds': '{n} EL',
+  'placard.toZero': 'SIFIRA KADAR',
+
+  'status.youDraw': 'Sıra sende · taş çek',
+  'status.youStart': 'Sen başlıyorsun · bir taş at',
+  'status.youDiscard': 'Bir taş at ya da bitir',
+  'status.theyPlay': '{name} oynuyor…',
+  'status.roundEnd': 'El bitti',
+  'status.matchEnd': 'Maç bitti',
+
+  'finish.ok': 'Bitir ✓',
+  'finish.okPairs': 'Çiftten bitir ✓',
+  'finish.no': 'Bu el bitmiyor',
+  'finish.cannot': 'Bu taşla bitemezsin: kalan 14 taş per ve seri olmuyor.',
+
+  'toast.pileEmpty': 'Ortada taş kalmadı.',
+  'toast.showed': '<b>{name}</b> göstergeyi gösterdi.',
+
+  'emote.hadi': 'Hadi!',
+  'emote.eyvallah': 'Eyvallah',
+
+  // result
+  'result.finishTile': 'bitiren taş',
+  'result.next': 'Sonraki el',
+  'result.waiting': 'Diğerleri bekleniyor…',
+  'result.allHands': 'Tüm eller',
+  'result.rematch': 'Rövanş',
+  'result.leave': 'Ana sayfa',
+  'result.winner': 'bitirdi',
+  'story.you.sets': 'Bitirdin!',
+  'story.you.okey': 'Okey atarak bitirdin!',
+  'story.you.pairs': 'Çiftten bitirdin!',
+  'story.you.pairsOkey': 'Çiftten, okey atarak!',
+  'story.they.sets': '{name} bitirdi',
+  'story.they.okey': 'Okey atarak bitirdi!',
+  'story.they.pairs': 'Çiftten bitti!',
+  'story.they.pairsOkey': 'Çiftten, okey atarak bitti!',
+  'story.line.sets': 'Herkes {n} puan kaybetti.',
+  'story.line.okey': 'Okey ortaya atıldı: puan iki katı. Herkes {n} puan kaybetti.',
+  'story.line.pairs': 'Yedi çift! Herkes {n} puan kaybetti.',
+  'story.line.pairsOkey': 'Yedi çift ve okey: en büyük bitiş. Herkes {n} puan kaybetti.',
+  'story.flair1': 'Temiz bir el.',
+  'story.flair2': 'Taşlar yerini buldu.',
+  'story.flair3': 'Istaka dört dörtlük.',
+  'story.pileEmpty': 'Taşlar bitti',
+  'story.pileEmptyLine': 'Kimse bitiremedi, puanlar değişmedi.',
+  'cele.win': 'Bitti!',
+  'cele.winSub': 'El senin',
+  'cele.bigSub': 'Büyük bitiş',
+  'cele.champion': 'Şampiyon!',
+  'cele.championSub': 'Maçı kazandın',
+  'cele.matchOver': 'Maç bitti',
+  'cele.matchWinner': 'Kazanan: {name}',
+  'podium.title': 'Maç sonucu',
+  'podium.fourth': 'Dördüncü',
+
+  'leave.title': 'Masadan kalkıyor musun?',
+  'leave.body': 'El devam ediyor. Ayrılırsan yerine otomatik oynanır; aynı linkle geri dönebilirsin.',
+  'leave.soloBody': 'Pratik masası kapanacak.',
+  'leave.yes': 'Kalk',
+
+  // errors (DESIGN.md error codes)
+  'err.notYourTurn': 'Sıra sende değil.',
+  'err.mustDraw': 'Önce bir taş çekmelisin.',
+  'err.mustDiscard': 'Şimdi bir taş atmalısın.',
+  'err.noTile': 'Bu taş sende yok.',
+  'err.emptyDiscard': 'Orada alınacak taş yok.',
+  'err.cannotFinish': 'Bu el bitmiyor.',
+  'err.cannotShow': 'Göstergeyi şimdi gösteremezsin.',
+  'err.badAction': 'Bu hamle olmaz.',
+  'err.roundOver': 'El bitti.',
+  'err.stale': 'Masa değişti, tekrar dene.',
+  'err.rate': 'Biraz yavaş.',
+  'err.full': 'Masa dolu.',
+  'err.notHost': 'Bunu sadece masa sahibi yapabilir.',
+  'err.generic': 'Bir şeyler ters gitti.',
+  'err.connect': 'Masaya bağlanılamadı.',
+  'err.noRoom': 'Bu masa artık yok.',
+  'err.create': 'Masa kurulamadı. İnternet bağlantını kontrol et.',
+
+  // settings / profile
+  'settings.title': 'Ayarlar',
+  'settings.lang': 'Dil',
+  'settings.sound': 'Ses',
+  'settings.speed': 'Animasyon',
+  'settings.felt': 'Çuha rengi',
+  'settings.profile': 'Profil',
+  'speed.slow': 'Yavaş', 'speed.normal': 'Normal', 'speed.fast': 'Hızlı',
+  'felt.green': 'Yeşil', 'felt.burgundy': 'Bordo', 'felt.blue': 'Mavi',
+  'profile.welcome': 'Hoş geldin!',
+  'profile.title': 'Profil',
+  'profile.intro': 'Masada görünecek adını ve simgeni seç. Hesap yok, şifre yok: bu cihazda kalır.',
+  'profile.name': 'Adın',
+  'profile.namePh': 'Örn. Ayşe',
+  'profile.avatar': 'Simge',
+  'profile.start': 'Masaya geç',
+  'profile.noName': 'İsimsiz',
+  'profile.default': 'Oyuncu',
+
+  // rules
+  'rules.title': 'Nasıl oynanır',
+  'rules.html': `<h4>Amaç</h4><p>Taş çekip atarak elindeki 14 taşı seri ve perlere dizmek, 15. taşı ortaya atarak bitirmek.</p>
+    <h4>Taşlar</h4><p>106 taş: dört renk (kırmızı, sarı, mavi, siyah), 1'den 13'e, her taştan iki tane, artı iki sahte okey.</p>
+    <h4>Gösterge ve okey</h4><p>Dağıtımdan sonra bir taş açılır: <b>gösterge</b>. Göstergenin aynı renkte bir fazlası <b>okey</b>dir (13'ten sonra 1). Okey her taşın yerine geçer. Sahte okey ise okeyin kendisi gibi oynanır.</p>
+    <h4>Sıra</h4><ul><li>Dağıtan 15 taş alır ve bir taş atarak başlar, diğerleri 14 taşla başlar.</li><li>Sonra herkes sırayla ortadan ya da solundaki oyuncunun son attığı taşı çeker ve sağına bir taş atar.</li></ul>
+    <h4>Seri, per, çift</h4><ul><li><b>Seri:</b> aynı renkte ardışık en az 3 taş. 12-13-1 olur, 13-1-2 olmaz.</li></ul>
+    <div class="ex">${T(0, 11)}${T(0, 12)}${T(0, 13)}${T(0, 1)}</div>
+    <ul><li><b>Per:</b> aynı sayıda, farklı renklerde 3 ya da 4 taş.</li></ul>
+    <div class="ex">${T(0, 7)}${T(1, 7)}${T(2, 7)}${T(3, 7)}</div>
+    <ul><li><b>Çift:</b> 7 çift aynı taşla da bitilir.</li></ul>
+    <h4>Puan</h4><p>Herkes 20 puanla başlar. Biri bitirince diğerleri puan kaybeder. Bir oyuncunun puanı 0'a inince maç biter; en yüksek puan kazanır.</p>
+    <table><tr><td>Normal bitiş</td><td>−2</td></tr><tr><td>Okey atarak bitiş</td><td>−4</td></tr><tr><td>Çiftten bitiş</td><td>−4</td></tr><tr><td>Çiftten, okey atarak</td><td>−8</td></tr><tr><td>Göstergeyi gösterme</td><td>−1</td></tr></table>
+    <p>Ortada taş kalmazsa el berabere biter.</p>
+    <h4>Bu masada</h4><ul><li>Taşları ıstakada sürükle, gruplar arasında boşluk bırak. <b>Seri diz</b> ve <b>Çift diz</b> senin yerine dizer.</li>
+    <li>Çekmek için ortadaki desteye ya da sol alttaki taşa dokun, ya da ıstakana sürükle.</li>
+    <li>Atmak için taşı sağ alttaki yerine sürükle ya da taşa iki kez dokun.</li>
+    <li>Bitirmek için taşı ortaya sürükle; bırakmadan önce elin bitip bitmediğini görürsün.</li>
+    <li>İlk turunda göstergenin eşi sendeyse <b>Göstergeyi göster</b>: herkes 1 puan kaybeder.</li>
+    <li>Okeylerin ıstakanda hafifçe parlar.</li></ul>`,
+
+  // stats
+  'stats.title': 'İstatistikler',
+  'stats.practice': 'Pratik (bu cihaz)',
+  'stats.rounds': 'Oynanan el',
+  'stats.roundsWon': 'Bitirdiğin el',
+  'stats.matches': 'Maç / kazanılan',
+  'stats.finishSets': 'Normal bitiş',
+  'stats.finishOkey': 'Okey atarak',
+  'stats.finishPairs': 'Çiftten',
+  'stats.bestStreak': 'En uzun seri',
+  'stats.practiceNote': 'Pratik sonuçları yalnızca bu cihazda tutulur ve sıralamaya sayılmaz.',
+  'stats.achievements': 'Başarımlar',
+  'stats.serverNote': 'Başarımlar arkadaş masalarında sunucu tarafından kaydedilir (yakında).',
+  'ach.unlocked': 'başarım açıldı',
+  'ach.ilk_zafer': 'İlk Zafer', 'achd.ilk_zafer': 'İlk elini bitir.',
+  'ach.okey_atan': 'Okey Atan', 'achd.okey_atan': 'Okey atarak bitir.',
+  'ach.ciftci': 'Çiftçi', 'achd.ciftci': 'Çiftten bitir.',
+  'ach.cifte_okey': 'Çifte Okey', 'achd.cifte_okey': 'Çiftten, okey atarak bitir.',
+  'ach.gostergeci': 'Göstergeci', 'achd.gostergeci': '10 kez gösterge göster.',
+  'ach.seri_5': 'Seri', 'achd.seri_5': 'Üst üste 5 el bitir.',
+  'ach.usta_avcisi': 'Usta Avcısı', 'achd.usta_avcisi': 'Üç uzman botu yen.',
+  'ach.hizli_el': 'Yıldırım', 'achd.hizli_el': 'İlk 5 turunda bitir.',
+  'ach.yuz_el': 'Müdavim', 'achd.yuz_el': '100 el oyna.',
+  'ach.dost_masasi': 'Dost Masası', 'achd.dost_masasi': '3 arkadaşınla bir maç bitir.',
+
+  // about + tips
+  'about.title': 'Hakkında',
+  'about.noAds': 'Reklam yok, ödeme yok, hesap yok.',
+  'about.runsOnTips': 'Okey oyunculardan gelen bahşişlerle ayakta duruyor.',
+  'about.p1': 'Klasik 106 taşlı Türk okeyi, tarayıcıda. Arkadaşlarınla bir link ile ya da botlara karşı oyna; uygulama yok, giriş yok.',
+  'about.p2': 'Botlar hile yapmaz: senin gördüğünü görürler, hafızaları da insan gibi kusurludur. Sunucu adildir: kimse başkasının taşını göremez.',
+  'about.p3': 'Adın ve simgen sadece bu cihazda saklanır. Para, ödül ya da satılan bir şey yoktur.',
+  'tip.title': 'Bahşiş kavanozu',
+  'tip.why1': 'Okey\'de reklam yok, sponsor yok, satılık hiçbir şey yok.',
+  'tip.why2': 'Ücretsiz ve öyle kalacak; sunucu ve yeni özellikler oyunculardan gelen bahşişlerle karşılanıyor.',
+  'tip.why3': 'Bahşiş sadece bir teşekkürdür: oyunda hiçbir şey kazandırmaz, hiçbir şeyi değiştirmez.',
+  'tip.kofi': 'Ko-fi\'de bahşiş bırak',
+  'tip.already': 'Zaten bahşiş bıraktım, bir daha sorma',
+  'tip.youTipped': 'Bahşiş bıraktın. Çok teşekkürler! ❤️',
+  'tip.thanksStop': 'Teşekkürler! ❤️ Bir daha sormayacağız.',
+  'tip.ask': 'Okey hoşuna gidiyor mu?',
+  'tip.askHot': 'Güzel el! Okey hoşuna gidiyor mu?',
+  'tip.later': 'Şimdi değil',
+  'tip.backTitle': 'Ko-fi\'ye uğradığın için teşekkürler',
+  'tip.backQ': 'Bahşiş bıraktın mı? Bıraktıysan bir daha sormayacağız.',
+  'tip.backNote': 'Ko-fi kimin bahşiş bıraktığını bize söylemez: hesap yok, oyunun bu cihazda kalır.',
+  'tip.backNo': 'Bu sefer değil',
+  'tip.backYes': 'Evet, bıraktım',
+};

@@ -1,0 +1,23 @@
+// Cloudflare Workers config (same setup as daily-puzzles): Workers & Pages → Import a repository.
+// Leave the build command empty; the deploy command is `npx wrangler deploy`.
+//   - site/ is published as static files
+//   - worker/index.js answers /api/* (rooms over WebSockets, stats)
+//   - one Room Durable Object per table; one Stats Durable Object; both created on first deploy
+{
+  "name": "okey",
+  "main": "worker/index.js",
+  "compatibility_date": "2026-11-01",
+  "assets": {
+    "directory": "./site",
+    "binding": "ASSETS",
+    "not_found_handling": "404-page",
+    "run_worker_first": ["/api/*"]
+  },
+  "durable_objects": {
+    "bindings": [
+      { "name": "ROOM", "class_name": "Room" },
+      { "name": "STATS", "class_name": "Stats" }
+    ]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Room", "Stats"] }]
+}

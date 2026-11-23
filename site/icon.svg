@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <radialGradient id="f" cx="50%" cy="38%" r="75%"><stop offset="0" stop-color="#17885a"/><stop offset=".6" stop-color="#0d5a3c"/><stop offset="1" stop-color="#062e1f"/></radialGradient>
+    <linearGradient id="t" x1="0" y1="0" x2=".3" y2="1"><stop offset="0" stop-color="#fffdf3"/><stop offset=".6" stop-color="#f3ead2"/><stop offset="1" stop-color="#ddd0ad"/></linearGradient>
+    <linearGradient id="w" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#9a6332"/><stop offset="1" stop-color="#5a3313"/></linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#f)"/>
+  <rect x="56" y="350" width="400" height="56" rx="14" fill="url(#w)"/>
+  <rect x="56" y="350" width="400" height="9" rx="4" fill="#c58d52" opacity=".7"/>
+  <g transform="rotate(-9 176 230)">
+    <rect x="112" y="118" width="128" height="196" rx="20" fill="#b9a67a"/>
+    <rect x="112" y="110" width="128" height="196" rx="20" fill="url(#t)"/>
+    <text x="176" y="236" text-anchor="middle" font-family="Georgia,serif" font-weight="700" font-size="118" fill="#c62828">7</text>
+    <circle cx="176" cy="270" r="11" fill="#c62828"/>
+  </g>
+  <g transform="rotate(8 330 226)">
+    <rect x="266" y="118" width="128" height="196" rx="20" fill="#b9a67a"/>
+    <rect x="266" y="110" width="128" height="196" rx="20" fill="url(#t)"/>
+    <circle cx="330" cy="208" r="44" fill="none" stroke="#1d6b3f" stroke-width="7"/>
+    <path fill="#1d6b3f" d="M330 172l10 24 26 2-20 17 6 25-22-13-22 13 6-25-20-17 26-2z"/>
+  </g>
+  <circle cx="256" cy="256" r="232" fill="none" stroke="#d8b45a" stroke-width="6" opacity=".55"/>
+</svg>

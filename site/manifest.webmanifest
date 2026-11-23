@@ -1,0 +1,16 @@
+{
+  "name": "Okey · Klasik Türk okeyi",
+  "short_name": "Okey",
+  "description": "Klasik Türk okeyi: arkadaşlarla bir link ile ya da botlara karşı. Giriş yok, reklam yok.",
+  "lang": "tr",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#062a1c",
+  "theme_color": "#0b3d29",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" },
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+  ]
+}

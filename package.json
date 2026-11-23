@@ -1,0 +1,14 @@
+{
+  "name": "okey",
+  "private": true,
+  "type": "module",
+  "description": "Classic Turkish Okey in the browser: friends and fair bots, no login.",
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "dev": "npx wrangler dev",
+    "deploy": "npx wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "4.162.0"
+  }
+}
