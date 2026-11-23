@@ -103,7 +103,7 @@ export function openBotPicker(seatName, add) {
   $('#bCustom').onclick = () => { custom = !custom; $('#bSl').hidden = !custom; };
   $('#bAdd').onclick = () => { add(level, custom ? params() : null); closeSheet(); };
 }
-const fmtP = (k, v) => (k === 'lookahead' ? String(v) : k === 'speed' ? v.toFixed(1) + '×' : Math.round(v * 100) + '%');
+const fmtP = (k, v) => (k === 'lookahead' ? String(v) : k === 'speed' || k === 'pairsBias' ? v.toFixed(2) + '×' : Math.round(v * 100) + '%');
 
 export function confirmSheet(title, body, yes, onYes) {
   sheet(`<h2>${title}</h2><p>${body}</p><div class="row"><button class="btn" id="cNo">${t('cancel')}</button><button class="btn gold" id="cYes">${yes}</button></div>`);

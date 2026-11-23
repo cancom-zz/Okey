@@ -59,6 +59,7 @@ export default {
   'bot.custom': 'Custom settings',
   'bot.add': 'Seat the bot',
   'bot.p.memory': 'Memory',
+  'bot.p.decay': 'Forgetting',
   'bot.p.defense': 'Defense',
   'bot.p.lookahead': 'Lookahead',
   'bot.p.takeDiscard': 'Takes discards',

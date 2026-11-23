@@ -14,15 +14,17 @@ export const SLOTS = COLS * TIERS;
 
 export const LEVELS = ['cirak', 'kalfa', 'usta', 'uzman'];
 
-// Custom bot sliders (DESIGN.md "Bots"): [param, min, max, step, defaults per level]
+// Custom bot sliders (DESIGN.md "Bots"): [param, min, max, step, start value per level cirak/kalfa/usta/uzman].
+// Ranges match the host's BOT_PARAM_RANGES; start values match LEVELS in site/shared/bots/index.js.
 export const BOT_PARAMS = [
-  ['memory', 0, 0.9, 0.05, [0.3, 0.55, 0.75, 0.88]],
-  ['defense', 0, 1, 0.05, [0.05, 0.35, 0.65, 0.9]],
-  ['lookahead', 0, 3, 1, [0, 1, 2, 3]],
-  ['takeDiscard', 0, 1, 0.05, [0.3, 0.5, 0.6, 0.7]],
-  ['pairsBias', 0, 1, 0.05, [0.2, 0.3, 0.4, 0.5]],
-  ['blunder', 0, 0.5, 0.01, [0.3, 0.15, 0.06, 0.02]],
-  ['speed', 0.3, 2, 0.1, [1.3, 1, 0.9, 0.8]],
+  ['memory', 0, 0.9, 0.05, [0.25, 0.5, 0.7, 0.85]],
+  ['decay', 0.01, 0.3, 0.01, [0.12, 0.07, 0.04, 0.02]],
+  ['lookahead', 1, 4, 1, [1, 2, 3, 4]],
+  ['defense', 0, 1, 0.05, [0, 0.3, 0.6, 0.85]],
+  ['takeDiscard', 0, 1, 0.05, [0.7, 0.6, 0.4, 0.3]],
+  ['pairsBias', 0, 2, 0.05, [0.85, 0.95, 1, 1]],
+  ['blunder', 0, 0.5, 0.01, [0.25, 0.12, 0.06, 0.02]],
+  ['speed', 0.25, 3, 0.05, [1.35, 1.15, 1, 0.9]],
 ];
 
 export const AVATARS = ['🦊', '🐻', '🐱', '🦁', '🐼', '🐯', '🐸', '🦉', '🐢', '🐧', '🐙', '🦄', '🐝', '🐺', '🦜', '🐨', '🌻', '☕', '🎩', '⚓'];

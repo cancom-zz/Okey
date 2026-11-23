@@ -64,6 +64,7 @@ export default {
   'bot.custom': 'Özel ayarlar',
   'bot.add': 'Botu otur',
   'bot.p.memory': 'Hafıza',
+  'bot.p.decay': 'Unutkanlık',
   'bot.p.defense': 'Savunma',
   'bot.p.lookahead': 'İleriyi görme',
   'bot.p.takeDiscard': 'Yerden alma',
