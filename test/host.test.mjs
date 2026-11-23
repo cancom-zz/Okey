@@ -146,7 +146,8 @@ test('lobby: sit, host, bots, settings, start; permissions', () => {
   v = h.view('a');
   assert.deepEqual(v.seats.map((s) => s.kind), ['human', 'bot', 'human', 'bot']);
   assert.deepEqual(v.seats[1].bot, { level: 'usta' });
-  assert.equal(v.seats[1].avatar, BOT_AVATAR.usta);
+  assert.ok(AVATARS.includes(v.seats[1].avatar));
+  assert.equal(new Set(v.seats.filter((x) => x.avatar).map((x) => x.avatar)).size, v.seats.filter((x) => x.avatar).length);
   assert.notEqual(v.seats[1].name, v.seats[3].name);
   h.say('a', { t: 'settings', settings: { turnSeconds: 5 } });
   assert.equal(h.errors('a').at(-1), 'badSettings');
@@ -422,7 +423,7 @@ test('snapshot -> restore mid-round behaves identically afterwards', () => {
     return { log: cur.log, results: cur.results, mark, steps };
   };
   const a = run(null);
-  const b = run(140);
+  const b = run(Math.floor(a.steps * 0.4)); // relative, so seed changes upstream don't move it past match end
   assert.ok(b.mark > 0);
   assert.equal(b.steps, a.steps);
   assert.deepEqual(b.log, a.log);

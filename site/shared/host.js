@@ -440,9 +440,12 @@ export class TableHost {
     if (this.seats[msg.seat].kind !== 'empty') return this.error(connId, 'seatTaken');
     const used = new Set(this.seats.map((s) => s.name));
     const free = BOT_NAMES.filter((n) => !used.has(n));
+    // Each bot gets its own avatar (the level shows as a label); BOT_AVATAR stays the level picker's icon.
+    const usedAv = new Set(this.seats.map((s) => s.avatar));
+    const freeAv = AVATARS.filter((a) => !usedAv.has(a));
     this.seats[msg.seat] = {
       kind: 'bot', level: msg.level, params, name: free[this.rng.int(free.length)],
-      avatar: BOT_AVATAR[msg.level], seed: this.rng.int(0x7fffffff),
+      avatar: freeAv[this.rng.int(freeAv.length)], seed: this.rng.int(0x7fffffff),
     };
     this.leaveFinishedMatch();
     this.changed([]);
