@@ -71,7 +71,7 @@ test('cleanSettings / cleanAction: variant switching and 101 rules', () => {
   assert.deepEqual(cleanAction({ type: 'undoTake', x: 1 }), { type: 'undoTake' });
 });
 
-test('a 101 match plays to the end on auto-play only (timeouts + bot seats), never leaking', () => {
+test('a 101 match plays to the end with 101 bots and a timed-out human, never leaking', () => {
   let views = 0;
   const onSend = (connId, msg, host) => {
     if (msg.t !== 'view' || !host?.match || host.match.phase !== 'playing') return;
@@ -103,7 +103,8 @@ test('a 101 match plays to the end on auto-play only (timeouts + bot seats), nev
   assert.deepEqual(v.round.opened, [false, false, false, false]);
   assert.deepEqual(v.round.required, { value: 101, pairs: 5 });
   assert.equal(v.hand.length, v.round.dealer === 0 ? 22 : 21);
-  assert.ok(h.host.bots.every((b) => b === null), 'no 101 bot brains: bot seats are auto-played');
+  assert.equal(h.host.bots[0], null, 'the human seat has no brain');
+  assert.ok(h.host.bots.slice(1).every((b) => b && typeof b.decide === 'function'), '101 bot seats have brains');
 
   let steps = 0;
   let sawAway = false;

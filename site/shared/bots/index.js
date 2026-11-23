@@ -111,7 +111,9 @@ export function createBot({ level = DEFAULT_LEVEL, params, seed = 1, saved } = {
       const res = think(view);
       if (!res) return 0;
       let ms = BASE_DELAY[res.kind] * (1 + 0.9 * res.hardness);
-      if (res.first === false) ms *= 0.6;                                        // 101: later steps of a turn
+      // 101: a longer first look at the turn, then quicker table steps (the plan is already made).
+      if (res.first === true) ms *= 1.4;
+      else if (res.first === false) ms *= res.kind === 'discard' ? 0.7 : 0.55;
       if (res.kind === 'discard' && view.round.firstTurn[view.you]) ms += 500; // first look at a new hand
       ms *= p.speed * rng.range(0.85, 1.15);
       return Math.round(Math.min(MAX_DELAY, Math.max(MIN_DELAY, ms)));

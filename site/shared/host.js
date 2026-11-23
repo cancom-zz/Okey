@@ -41,6 +41,7 @@ export const BOT_NAMES = ['Ayşe', 'Mehmet', 'Fatma', 'Ali', 'Zeynep', 'Mustafa'
 
 export const MAX_CONNECTIONS = 12;
 export const NEXT_ROUND_MS = 20_000;      // round end -> next round, unless every connected human pressed next
+export const MAX_BOT_STEPS_101 = 40;      // guard: a 101 bot turn longer than this is finished by auto-play
 export const AUTOPLAY_MS = 1_000;         // a seat away for 2+ timeouts is auto-played after this
 export const AWAY_AUTOPLAY_AFTER = 2;     // consecutive timeouts
 export const OFFLINE_TURN_SECONDS = 30;   // turn limit for a disconnected human when turnSeconds is 0 (off)
@@ -48,8 +49,8 @@ export const EMOTE_GAP_MS = 1_500;
 export const RATE = { burst: 20, perSec: 5 };
 export const MAX_MESSAGE_CHARS = 2_000;
 export const DEFAULT_SETTINGS = { variant: 'classic', turnSeconds: 30, rounds: null, startPoints: 20 };
-// Game variants: 'classic' (site/shared/okey) and '101' (site/shared/okey101). There are no 101 bots yet: a bot
-// seat in a 101 match plays the engine's timeoutAction (auto-play), one step at a time.
+// Game variants: 'classic' (site/shared/okey) and '101' (site/shared/okey101). The same bot brain plays both (it
+// reads the variant from the view's settings); a 101 turn is several bot steps, each planned and timed.
 export const VARIANTS = ['classic', '101'];
 const RULES_101 = ['raiseOpening', 'pairsOpening', 'pairsOnly', 'pairsCanAdd', 'addOnOpeningTurn', 'okeySwap'];
 const SCORING_101 = ['finish', 'unopened', 'okeyInHand', 'islek', 'okeyDiscard'];
@@ -281,9 +282,8 @@ export class TableHost {
     return (this.match ? this.match.settings?.variant : this.settings?.variant) === '101';
   }
 
-  /** A bot brain for a seat, or null in a 101 match (no 101 bots yet: the seat is auto-played). */
+  /** A bot brain for a seat (one brain plays both variants). */
   makeBot(seat, saved) {
-    if (this.is101) return null;
     return this.createBot({ level: seat.level, params: seat.params, seed: seat.seed, ...(saved !== undefined ? { saved } : {}) });
   }
 
@@ -753,7 +753,7 @@ export class TableHost {
     let ms = 800;
     let action = null;
     if (!bot) {
-      // 101 (no bot brain yet): auto-play one step at a time, a little faster after the first.
+      // No brain (e.g. an injected createBot returned none): auto-play one step at a time.
       this.botAction = null;
       this.deadline = this.now() + (this.botActs === 0 ? 900 : 450);
       return;
@@ -789,7 +789,8 @@ export class TableHost {
     const action = this.botAction;
     this.botAction = null;
     this.botActs += 1;
-    if (action && this.botActs <= 4) {
+    // A classic turn is 2 bot steps; a 101 turn can be many (draw, open, add, swap, ..., discard).
+    if (action && this.botActs <= (this.is101 ? MAX_BOT_STEPS_101 : 4)) {
       try {
         const res = this.engine.act(this.match, seat, action);
         return this.applyGame(res.match, res.events);

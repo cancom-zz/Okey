@@ -7,52 +7,10 @@ import {
 } from '../site/shared/okey/index.js';
 import { createBot, LEVELS, LEVEL_IDS, resolveParams, MAX_MEMORY, MIN_DECAY } from '../site/shared/bots/index.js';
 import { Memory } from '../site/shared/bots/memory.js';
+import { guard } from './botguard.mjs';
 
 // ---------------------------------------------------------------------------------------------------------
 // Harness
-
-/**
- * A view wrapped so that reading anything a bot must not use throws, and writing anything throws.
- * Allowed: the DESIGN.md "View" fields, minus everything that identifies a seat (kind, bot, name, avatar,
- * connected, away, id).
- */
-const ALLOWED = {
-  root: ['v', 'code', 'phase', 'settings', 'host', 'you', 'seats', 'round', 'hand', 'result', 'now', 'winners'],
-  seat: ['score', 'handCount', 'discard', 'showedIndicator'],
-  discard: ['top', 'count'],
-  round: ['number', 'dealer', 'turn', 'stage', 'indicator', 'okey', 'pileCount', 'turnEndsAt', 'firstTurn'],
-  okey: ['color', 'num'],
-};
-const ARRAY_OK = new Set(['length', 'constructor', 'slice', 'map', 'filter', 'includes', 'indexOf', 'some',
-  'every', 'forEach', 'find', 'findIndex', 'reduce', 'at', 'concat', 'join', 'entries', 'keys', 'values']);
-
-function guard(value, kind, path, log) {
-  if (value === null || typeof value !== 'object') return value;
-  const allowed = new Set(ALLOWED[kind] ?? []);
-  const childKind = (prop) => {
-    if (kind === 'root') return { seats: 'seats', round: 'round', hand: 'array', settings: 'opaque', result: 'opaque', winners: 'array' }[prop];
-    if (kind === 'seats') return 'seat';
-    if (kind === 'seat' && prop === 'discard') return 'discard';
-    if (kind === 'round') return prop === 'okey' ? 'okey' : prop === 'firstTurn' ? 'array' : undefined;
-    return undefined;
-  };
-  return new Proxy(value, {
-    get(target, prop, receiver) {
-      if (typeof prop === 'symbol') return Reflect.get(target, prop, receiver);
-      const isArray = Array.isArray(target);
-      const ok = isArray ? (/^\d+$/.test(prop) || ARRAY_OK.has(prop)) : allowed.has(prop);
-      if (!ok || kind === 'opaque') throw new Error(`bot read forbidden view field ${path}.${prop}`);
-      log?.add(`${path}.${isArray && /^\d+$/.test(prop) ? '[]' : prop}`);
-      const v = Reflect.get(target, prop, receiver);
-      const ck = isArray && /^\d+$/.test(prop) ? (kind === 'seats' ? 'seat' : 'array') : childKind(prop);
-      return ck ? guard(v, ck, `${path}.${prop}`, log) : v;
-    },
-    set() { throw new Error(`bot wrote to the view at ${path}`); },
-    defineProperty() { throw new Error(`bot wrote to the view at ${path}`); },
-    deleteProperty() { throw new Error(`bot deleted from the view at ${path}`); },
-    ownKeys() { throw new Error(`bot enumerated ${path}`); },
-  });
-}
 
 function seatsFor(levels) {
   return levels.map((level, i) => ({ id: 'p' + i, name: 'P' + i, kind: 'bot', bot: { level } }));
