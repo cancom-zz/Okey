@@ -25,7 +25,7 @@ export function deltasHTML(view) {
   return `<div class="deltas">${view.seats.map((s, i) => {
     const d = r.deltas[i] || 0;
     return `<div class="dl ${i === r.winner ? 'w' : ''} ${i === view.you ? 'me' : ''}"><span class="av">${esc(s.avatar || '🙂')}</span>
-      <span class="nm">${esc(s.name || '—')}</span><b class="${d < 0 ? 'neg' : d > 0 ? 'pos' : ''}">${d ? (d > 0 ? '+' : '−') + Math.abs(d) : '±0'}</b><small>${r.scores ? r.scores[i] : s.score}</small></div>`;
+      <span class="nm">${esc(s.name || '—')}</span><b class="${d < 0 ? 'neg' : d > 0 ? 'pos' : ''}">${d ? (d > 0 ? '+' : '−') + Math.abs(d) : '±0'}</b><small>${r.scores ? r.scores[i] : s.score}</small>${s.ready && s.kind === 'human' ? `<i class="rdy" title="${t('result.ready')}">✓</i>` : ''}</div>`;
   }).join('')}</div>`;
 }
 
@@ -45,5 +45,5 @@ export function podiumHTML(view) {
   return `<div class="podium">${podium.map(o => `<div class="pd p${o.place}">
       <span class="av">${esc(o.s.avatar || '🙂')}</span><span class="nm">${esc(o.s.name)}</span>
       <div class="step"><b>${medal[o.place]}</b><small>${o.score}</small></div></div>`).join('')}</div>
-    ${order[3] ? `<div class="fourth">${t('podium.fourth')}: ${esc(order[3].s.avatar || '')} ${esc(order[3].s.name)} · ${order[3].score}</div>` : ''}`;
+    ${order[3] ? `<div class="fourth">${order[3].place + 1}. ${esc(order[3].s.avatar || '')} ${esc(order[3].s.name)} · ${order[3].score}</div>` : ''}`;
 }

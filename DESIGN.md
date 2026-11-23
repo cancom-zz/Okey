@@ -369,27 +369,67 @@ socket is closed), `full` (12 sockets), `notHost`, `notSeated`, `seatTaken`, `ba
 ## Bots (`site/shared/bots/`)
 
 ```js
-createBot({ level, params?, seed }) -> bot
-bot.observe(event)            // the same public events (and its own private ones) a human client gets
-bot.decide(view) -> action    // view = viewFor(match, botSeat), nothing else
-bot.delayMs(view) -> number   // human-like thinking time
+import { createBot, LEVELS, LEVEL_IDS, resolveParams } from './bots/index.js';
+createBot({ level, params?, seed, saved? }) -> bot   // saved: a bot.snapshot() (JSON), restores everything
+bot.observe(event)            // the events its seat receives: eventsFor(events, seat)
+bot.delayMs(view) -> ms       // thinking time for this view (0 when it is not its move)
+bot.decide(view) -> action | null   // null when it is not its move; same decision delayMs timed (cached by view.v)
+bot.snapshot() -> JSON        // level, params, RNG state, memory, per-round state
+bot.level, bot.params         // resolved (clamped) params
 ```
 
-Levels: `cirak` (beginner), `kalfa` (intermediate), `usta` (advanced), `uzman` (expert). Each level is a set
-of params that a custom bot can override:
+`view` is `viewFor(match, seat)` with the seats' `kind`/`bot`/`id` removed (host `botView`). A bot reads only:
+`phase, you, hand`, `round.{number, turn, stage, indicator, okey, pileCount, firstTurn}`,
+`seats[i].{discard.top, showedIndicator}`. It never reads names, kinds or levels, never writes to the view,
+and has no other input (no match state, pile, other hands or other bots). `test/bots.test.mjs` plays games
+through a Proxy view that throws on any other field and on any write.
 
-- `memory` 0..1: chance to remember a seen discard; `decay`: per-turn chance to forget a remembered tile.
-  Even `uzman` stays below perfect (memory ≤ 0.9, decay > 0).
-- `lookahead`: how many future draws the hand evaluation considers (outs counting).
-- `defense` 0..1: how much it avoids discarding tiles the next player likely wants (inferred from what that
-  player picked up and discarded).
-- `pairsBias`: willingness to go for a pairs finish.
-- `blunder` 0..1: chance of a sub-optimal but plausible move.
-- `takeDiscard`: how readily it takes the previous player's discard.
-- `speed`: thinking-time multiplier.
+Files: `faces.js` (face indices 0..51, wild okeys apart), `evaluate.js` (hand value, outs, one-draw
+look-ahead), `memory.js` (imperfect event memory) are variant-neutral and reused by 101 bots; `classic.js`
+is the classic Okey turn policy; `index.js` holds levels and `createBot`. No module-level mutable state:
+each bot owns its seeded RNG (`seededRng`, state in the snapshot), memory and round state. No `Math.random`.
 
-Forbidden inputs for a bot: the match state, the pile, other hands, other bots, seat kinds. Tests enforce that
-`decide` only touches the view it is given.
+**Levels** (`LEVELS[id] = { id, name (tr), en, params }`, frozen, ladder order in `LEVEL_IDS`):
+
+| id | name | memory | decay | lookahead | defense | pairsBias | blunder | takeDiscard | gamble | speed |
+|---|---|---|---|---|---|---|---|---|---|---|
+| `cirak` | Çırak | 0.25 | 0.12 | 1 | 0 | 0.85 | 0.25 | 0.7 | 0 | 1.35 |
+| `kalfa` | Kalfa | 0.5 | 0.07 | 2 | 0.3 | 0.95 | 0.12 | 0.6 | 0 | 1.15 |
+| `usta` | Usta | 0.7 | 0.04 | 3 | 0.6 | 1 | 0.06 | 0.4 | 0.1 | 1.0 |
+| `uzman` | Uzman | 0.85 | 0.02 | 4 | 0.85 | 1 | 0.02 | 0.3 | 0.25 | 0.9 |
+
+Custom bots override any param; `resolveParams` clamps every bot, custom ones included: memory ≤ 0.9,
+decay ≥ 0.005, lookahead 1..4, speed 0.25..3, the rest 0..1 (pairsBias 0..2). Unknown level → `kalfa`.
+
+- `memory`: chance to remember each public fact when it happens (own discards: `memory + (1-memory)/2`);
+  `decay`: chance per turn (each discard) to forget each remembered fact. Facts, per round: tiles discarded
+  (dead) or picked up / shown (held by someone), and per seat what it picked up from its left stack, what it
+  threw, and which tops it passed on. Stack tops and the indicator are on the table, so always counted.
+  `live[face]` = 2 − own copies − visible − remembered gone: the outs it believes are left.
+- `lookahead`: 1 = sets, partials and pairs only (a partial is a partial, no outs); 2 = partials valued by
+  live outs and loose tiles by live neighbours (dead waits are dropped); 3 = plus one draw ahead: expected gain
+  of the next pile draw for the discards close to the best and for the take-or-draw choice; 4 = the same,
+  looking at twice as many discard candidates.
+- `defense`: penalty for discarding what the next player (seat + 1, the only one who can take it) seems to
+  collect, inferred from its remembered pickups (neighbours in a run, same number in a group); a small bonus
+  for faces it passed on or threw; grows as the pile shrinks and as it picks up more; capped so it never
+  makes a bot break a complete set.
+- `pairsBias`: weight of the pairs route against the sets route.
+- `blunder`: chance of a plausible slip: the best discard that is actually worse but within 1 point of value
+  (breaks a partial, never a complete set while a loose tile exists, never an okey); half as often, missing a
+  good discard pickup; forgetting to show the indicator.
+- `takeDiscard`: readiness to take the previous player's discard (threshold on the value gain).
+- `gamble`: with a finish in hand, an okey in it and ≥ 20 tiles in the pile, the chance to hold one more
+  turn for an okey finish (double) when it believes ≥ 5 live tiles would allow it.
+- `speed`: thinking-time multiplier. `delayMs` = base by move (draw 750, discard 1000, show 1000, finish
+  1700 ms) × (1 + 0.9 × how close the call was) + 500 on a first discard, × speed × jitter 0.85..1.15,
+  clamped to 350..4000 ms.
+
+Always: finishes when it can (highest-scoring option: pairs+okey > pairs = okey > normal), takes a discard
+that finishes or is an okey, never discards an okey otherwise, never throws back the tile it just took.
+
+Strength (test/bots.test.mjs, 160 rounds, one bot of each level per table, every level in every seat):
+round wins Çırak 9%, Kalfa 16%, Usta 34%, Uzman 37%. (800 rounds: 12 / 20 / 32 / 33%.)
 
 ## Statistics and achievements (phase 2)
 

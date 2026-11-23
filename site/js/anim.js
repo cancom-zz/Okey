@@ -5,6 +5,7 @@ import { tileClass, tileInner } from './tiles.js';
 
 const params = new URLSearchParams(location.search);
 const animOff = params.get('anim') === '0';
+if (animOff) document.documentElement.classList.add('noanim');   // tests: no CSS motion either
 let mq = null;
 try { mq = matchMedia('(prefers-reduced-motion: reduce)'); } catch { /* ignore */ }
 

@@ -1,12 +1,13 @@
-// Turn policy: what to do with the view in front of the bot.
+// Classic Okey turn policy: what to do with the view in front of the bot. (Variant-specific: a 101 Okey
+// policy would live beside this file and reuse faces.js, evaluate.js and memory.js.)
 //
 // Uses only: the bot's own view (hand, discard tops and counts, indicator/okey, pile count, turn, stage,
 // firstTurn, showedIndicator) and the bot's own Memory. Never the seat kinds, names or anything else.
 
 import { finishOptions, findFinish } from '../okey/rules.js';
 import { otherCopy } from '../okey/tiles.js';
-import { FACES, WILD, faceIndex, faceColor, faceNum, okeyFaceIndex, runNeighbors, groupNeighbors } from './faces.js';
-import { makeContext, evaluate } from './evaluate.js';
+import { FACES, WILD, faceIndex, handVector, faceColor, faceNum, okeyFaceIndex, runNeighbors, groupNeighbors } from './faces.js';
+import { makeContext, evaluate, expectedDrawGain } from './evaluate.js';
 
 const BLUNDER_MARGIN = 1.0;   // a blunder only picks a move at most this much worse (stays plausible:
                               // breaks a partial or keeps a weaker tile, never breaks a complete set)
@@ -20,13 +21,7 @@ const finishPoints = (o) => (o.kind === 'pairs' ? 4 : 2) * (o.okeyFinish ? 2 : 1
 
 /** Value of a tile list for this bot (higher = closer to finishing). */
 function valueOf(ids, okey, ctx, floor = -Infinity) {
-  const counts = new Int8Array(FACES);
-  let jokers = 0;
-  for (const id of ids) {
-    const f = faceIndex(id, okey);
-    if (f === WILD) jokers++;
-    else counts[f]++;
-  }
+  const { counts, jokers } = handVector(ids, okey);
   return evaluate(counts, jokers, ctx, floor).value;
 }
 
@@ -41,41 +36,6 @@ function discardCandidates(hand, okey, exclude) {
     out.push(id);
   }
   return out;
-}
-
-/**
- * Lookahead 3: the expected gain of the next draw from the pile for a 14-tile hand, over the faces the bot
- * believes are live (weighted by live copies). Only faces that touch the hand can help; the rest are skipped.
- */
-export function expectedDrawGain(hand14, okey, ctx) {
-  const counts = new Int8Array(FACES);
-  let jokers = 0;
-  for (const id of hand14) {
-    const f = faceIndex(id, okey);
-    if (f === WILD) jokers++;
-    else counts[f]++;
-  }
-  const base = evaluate(counts, jokers, ctx).value;
-  const near = new Uint8Array(FACES);
-  for (let f = 0; f < FACES; f++) {
-    if (!counts[f]) continue;
-    near[f] = 1;
-    for (const { f: g } of runNeighbors(f)) near[g] = 1;
-    for (const g of groupNeighbors(f)) near[g] = 1;
-  }
-  let total = 0, gain = 0;
-  for (let f = 0; f < FACES; f++) {
-    const n = ctx.live[f];
-    if (!n) continue;
-    total += n;
-    if (!near[f]) continue;
-    counts[f]++;
-    const floor = base + ctx.single[f];     // a tile that only sits loose gains nothing
-    const d = evaluate(counts, jokers, ctx, floor).value - floor;
-    counts[f]--;
-    if (d > 0) gain += n * d;
-  }
-  return total ? gain / total : 0;
 }
 
 /** Rank discards of a 15-tile hand by remaining value (plus one-draw look-ahead) minus danger. */
@@ -95,8 +55,10 @@ function rankDiscards(hand, view, ctx, danger, exclude, deep = ctx.lookahead >= 
   if (deep) {
     // Look one draw ahead for the discards that are close to the best (the others stay where they are).
     out.sort((a, b) => b.value - a.value);
-    for (let i = 0; i < out.length && i < DEEP_CANDIDATES; i++) {
-      if (out[i].value < top - DEEP_WINDOW) break;
+    const wide = ctx.lookahead >= 4;
+    const maxDeep = wide ? 2 * DEEP_CANDIDATES : DEEP_CANDIDATES, window = wide ? 2 * DEEP_WINDOW : DEEP_WINDOW;
+    for (let i = 0; i < out.length && i < maxDeep; i++) {
+      if (out[i].value < top - window) break;
       out[i].value += expectedDrawGain(out[i].rest, okey, ctx);
     }
   }

@@ -32,7 +32,7 @@ export const EMOTES = ['clap', 'smile', 'wow', 'fire', 'think', 'hadi', 'eyvalla
 // Custom bot params: [min, max]. memory stays below perfect and decay above zero (DESIGN.md "Bots").
 // The bots clamp further (site/shared/bots resolveParams); this only rejects garbage.
 export const BOT_PARAM_RANGES = {
-  memory: [0, 0.9], decay: [0.005, 1], lookahead: [0, 3], defense: [0, 1], pairsBias: [0, 2],
+  memory: [0, 0.9], decay: [0.005, 1], lookahead: [1, 4], defense: [0, 1], pairsBias: [0, 2],
   blunder: [0, 1], takeDiscard: [0, 1], gamble: [0, 1], speed: [0.25, 3],
 };
 export const BOT_NAMES = ['Ayşe', 'Mehmet', 'Fatma', 'Ali', 'Zeynep', 'Mustafa', 'Elif', 'Hasan', 'Emine',

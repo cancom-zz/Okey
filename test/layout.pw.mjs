@@ -1,0 +1,157 @@
+// Playwright: the client at phone, landscape-phone and laptop sizes, plus a full practice match end to end.
+//   node test/layout.pw.mjs            (screenshots in test/shots/, gitignored)
+// Fails on page scroll, on elements off screen, on page errors, or if the match doesn't reach its end.
+import { createRequire } from 'node:module';
+import { mkdir } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { serve } from './serve.mjs';
+
+const { chromium } = createRequire(import.meta.url)('playwright');
+const SHOTS = join(dirname(fileURLToPath(import.meta.url)), 'shots');
+const SIZES = [[390, 600], [375, 548], [844, 390], [1280, 800]];
+const PORT = 8000 + Math.floor(Math.random() * 900);
+const BASE = `http://localhost:${PORT}`;
+const PROFILE = { name: 'Can', avatar: '🦊', id: 'pw-device-00000001', secret: 'pw-secret-00000001', tip: { play: 0, at: 0, next: 0, went: 0, done: true } };
+const only = process.argv[2] || '';   // 'e2e' or 'layout' to run one part
+
+const failures = [];
+const fail = (msg) => { failures.push(msg); console.log('  ✗ ' + msg); };
+const ok = (msg) => console.log('  ✓ ' + msg);
+
+await mkdir(SHOTS, { recursive: true });
+const server = await serve(PORT);
+const browser = await chromium.launch();
+
+async function page(w, h, { clock = false, profile = PROFILE } = {}) {
+  const ctx = await browser.newContext({ viewport: { width: w, height: h }, deviceScaleFactor: 2 });
+  const p = await ctx.newPage();
+  p.errors = [];
+  p.on('pageerror', (e) => p.errors.push(e.message));
+  p.on('console', (m) => { if (m.type() === 'error') p.errors.push(m.text()); });
+  if (clock) await p.clock.install();
+  await p.addInitScript((prof) => { if (prof && !localStorage.getItem('okey.v1')) localStorage.setItem('okey.v1', JSON.stringify(prof)); }, profile);
+  return p;
+}
+
+// No page scroll, and every visible element of interest inside the viewport.
+async function checkFit(p, label, selectors) {
+  const r = await p.evaluate((sels) => {
+    const W = innerWidth, H = innerHeight, de = document.documentElement, out = [];
+    if (de.scrollHeight > H + 1 || de.scrollWidth > W + 1) out.push(`page scrolls (${de.scrollWidth}×${de.scrollHeight} in ${W}×${H})`);
+    for (const sel of sels) {
+      for (const el of document.querySelectorAll(sel)) {
+        const b = el.getBoundingClientRect(), cs = getComputedStyle(el);
+        if (!b.width || !b.height || cs.visibility === 'hidden' || el.closest('[hidden]')) continue;
+        if (b.left < -1 || b.top < -1 || b.right > W + 1 || b.bottom > H + 1) out.push(`${sel} off screen (${Math.round(b.left)},${Math.round(b.top)} ${Math.round(b.width)}×${Math.round(b.height)})`);
+      }
+    }
+    return out;
+  }, selectors);
+  if (r.length) r.slice(0, 6).forEach((m) => fail(`${label}: ${m}`)); else ok(`${label}: fits, no scroll`);
+}
+
+// Play my turns through the UI (tap the pile, double-tap a tile) while the fake clock runs the bots.
+async function playTurns(p, ms) {
+  let spent = 0;
+  while (spent < ms) {
+    const st = await p.evaluate(() => {
+      const f = document.querySelector('.felt');
+      return {
+        draw: !!f && f.classList.contains('can-draw'), discard: !!f && f.classList.contains('can-discard'),
+        result: !!document.querySelector('#result:not([hidden]) .rv-acts'), tip: !!document.querySelector('#tiplater'),
+      };
+    });
+    if (st.result) return 'result';
+    if (st.tip) await p.click('#tiplater');
+    if (st.draw) await p.click('#pile');
+    else if (st.discard) {
+      const tiles = await p.$$('.rack .rt:not(.gone)');
+      if (tiles.length) await tiles[tiles.length - 1].dblclick();
+    }
+    await p.clock.runFor(400); spent += 400;
+  }
+  return 'time';
+}
+
+const TABLE_SEL = ['.rack .rt', '#pile', '.seat .av', '.ds .dstack', '.bar .chip', '.top .ibtn', '.ind', '.status'];
+
+if (only !== 'e2e') for (const [w, h] of SIZES) {
+  const tag = `${w}x${h}`;
+  console.log(`\n${tag}`);
+  // home
+  let p = await page(w, h);
+  await p.goto(`${BASE}/?anim=0#/`);
+  await p.waitForSelector('#hSolo');
+  await p.screenshot({ path: join(SHOTS, `home-${tag}.png`) });
+  await checkFit(p, 'home', ['#hSolo', '#hCreate', '#hCode', '.logo', '.hfoot', '.top .ibtn']);
+  await p.context().close();
+
+  // practice table a few turns in (the real LocalTable and bots)
+  p = await page(w, h, { clock: true });
+  await p.goto(`${BASE}/?anim=0#/solo`);
+  await p.clock.runFor(500);
+  await p.waitForSelector('.rack .rt', { timeout: 10_000 });
+  await playTurns(p, 24_000);
+  await p.screenshot({ path: join(SHOTS, `table-${tag}.png`) });
+  await checkFit(p, 'table', TABLE_SEL);
+  const tw = await p.evaluate(() => document.querySelector('.rack .rt').getBoundingClientRect().width);
+  if (tw < 24) fail(`table: rack tiles only ${tw.toFixed(1)}px wide`); else ok(`table: rack tiles ${tw.toFixed(1)}px wide`);
+  await p.click('#bEmote');
+  await p.screenshot({ path: join(SHOTS, `emotes-${tag}.png`) });
+  await checkFit(p, 'emotes', ['#emotes button']);
+  await p.click('#tRules');
+  await p.waitForSelector('.sheet .x');
+  await checkFit(p, 'rules sheet', ['.sheet .x']);
+  if (p.errors.length) fail(`table: page errors: ${p.errors.slice(0, 3).join(' | ')}`);
+  await p.context().close();
+
+  // the lobby of a friends' table (mock transport: this static server has no worker)
+  p = await page(w, h);
+  await p.goto(`${BASE}/?mock=1&anim=0#/m/TEST42`);
+  await p.waitForSelector('.lseat .spot');
+  await p.waitForTimeout(3000);   // friends sit down
+  await p.screenshot({ path: join(SHOTS, `lobby-${tag}.png`) });
+  await checkFit(p, 'lobby', ['.lseat', '.lctl button', '.lplacard']);
+  await p.context().close();
+
+  // a round story: a bot finishes straight away (mock scenario), with the real animations
+  p = await page(w, h);
+  await p.goto(`${BASE}/?mock=1&fast=1&scenario=reveal#/solo`);
+  await p.waitForSelector('#result:not([hidden]) .rv-acts', { timeout: 20_000 });
+  await p.waitForTimeout(3500);
+  await p.screenshot({ path: join(SHOTS, `result-${tag}.png`) });
+  await checkFit(p, 'result', ['.rv-card .tile', '.rv-acts .btn', '.deltas .dl', '.rverd']);
+  await p.context().close();
+}
+
+// ---- a full practice match on the real LocalTable: deal → turns → round end → next round → match end ----
+if (only !== 'layout') {
+  console.log('\nfull practice match (390x600, 2 rounds)');
+  const p = await page(390, 600, { clock: true });
+  await p.goto(`${BASE}/?anim=0&rounds=2#/solo`);
+  await p.clock.runFor(500);
+  await p.waitForSelector('.rack .rt', { timeout: 10_000 });
+  for (let r = 0; r < 2; r++) {
+    const res = await playTurns(p, 20 * 60_000);
+    if (res !== 'result') { fail(`round ${r + 1} never ended`); break; }
+    ok(`round ${r + 1} ended: “${(await p.textContent('.rverd')).trim()}”`);
+    if (r === 0) {
+      await p.screenshot({ path: join(SHOTS, 'e2e-round1.png') });
+      await p.click('#rvNext');
+      await p.clock.runFor(1500);
+      const dealt = await p.waitForSelector('#result[hidden]', { state: 'attached', timeout: 5000 }).then(() => true, () => false);
+      if (!dealt) fail('next round did not start'); else ok('next round dealt');
+    }
+  }
+  await p.clock.runFor(3000);
+  if (!(await p.$('.podium'))) fail('no podium at match end'); else ok('match end: podium shown');
+  await p.screenshot({ path: join(SHOTS, 'e2e-matchend.png') });
+  if (p.errors.length) fail(`e2e: page errors: ${p.errors.slice(0, 3).join(' | ')}`);
+  await p.context().close();
+}
+
+await browser.close();
+server.close();
+console.log(failures.length ? `\n${failures.length} failure(s)` : '\nall good');
+process.exit(failures.length ? 1 : 0);

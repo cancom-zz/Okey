@@ -11,7 +11,7 @@
 
 import { seededRng } from '../okey/rng.js';
 import { Memory } from './memory.js';
-import { plan } from './policy.js';
+import { plan } from './classic.js';
 
 export const LEVEL_IDS = ['cirak', 'kalfa', 'usta', 'uzman'];
 
@@ -32,12 +32,12 @@ export const LEVELS = freeze({
   usta: freeze({
     id: 'usta', name: 'Usta', en: 'Master',
     params: freeze({ memory: 0.7, decay: 0.04, lookahead: 3, defense: 0.6, pairsBias: 1, blunder: 0.06,
-      takeDiscard: 0.5, gamble: 0.2, speed: 1.0 }),
+      takeDiscard: 0.4, gamble: 0.1, speed: 1.0 }),
   }),
   uzman: freeze({
     id: 'uzman', name: 'Uzman', en: 'Expert',
-    params: freeze({ memory: 0.85, decay: 0.02, lookahead: 3, defense: 0.85, pairsBias: 1, blunder: 0.02,
-      takeDiscard: 0.5, gamble: 0.4, speed: 0.9 }),
+    params: freeze({ memory: 0.85, decay: 0.02, lookahead: 4, defense: 0.85, pairsBias: 1, blunder: 0.02,
+      takeDiscard: 0.3, gamble: 0.25, speed: 0.9 }),
   }),
 });
 
@@ -56,7 +56,7 @@ export function resolveParams(level, overrides = {}) {
   return {
     memory: clamp(o.memory, 0, MAX_MEMORY, Math.min(base.memory, MAX_MEMORY)),
     decay: clamp(o.decay, MIN_DECAY, 1, Math.max(base.decay, MIN_DECAY)),
-    lookahead: Math.round(clamp(o.lookahead, 1, 3, base.lookahead)),
+    lookahead: Math.round(clamp(o.lookahead, 1, 4, base.lookahead)),
     defense: clamp(o.defense, 0, 1, base.defense),
     pairsBias: clamp(o.pairsBias, 0, 2, base.pairsBias),
     blunder: clamp(o.blunder, 0, 1, base.blunder),

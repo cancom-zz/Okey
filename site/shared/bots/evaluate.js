@@ -4,16 +4,19 @@
 // still obtainable: 2 minus its own copies minus what it can see or remembers as gone). Nothing here knows
 // the pile order or anyone else's hand.
 //
-// Sets route: an exhaustive search over the hand (wild okeys are kept aside: each okey fills any one slot)
-// that maximises
+// Variant-neutral: classic and 101 Okey share tiles, runs and groups (handSize sets the slot count).
+//
+// Sets route: an exhaustive branch-and-bound search over the hand (wild okeys are kept aside: each okey
+// fills any one slot) that maximises
 //   1.0 per tile locked in a complete set (run or group, any length)
 // + a value per two-tile partial set (connector, gap, group pair), driven by its outs
 // + a small value per loose tile (its connectivity to live neighbours: 2-away structure, lookahead >= 2)
-// with no more partials than fit in 14 slots.
-// Pairs route: 2 per identical pair, plus waiting singles (a single only pairs with its other copy).
+// with no more partials than fit in the handSize slots (each partial needs 3).
+// Pairs route (classic: 7 pairs): 2 per identical pair, plus waiting singles (a single only pairs with its
+// other copy).
 // A finished hand scores about 14; each missing tile costs about 1.
 
-import { FACES, runNeighbors, groupNeighbors } from './faces.js';
+import { FACES, handVector, runNeighbors, groupNeighbors } from './faces.js';
 
 export const JOKER_VALUE = 1.25;
 const OUTS_VALUE = [0.2, 0.85, 1.05, 1.2, 1.3];   // value of a two-tile partial by live outs (lookahead >= 2)
@@ -81,7 +84,9 @@ export function evaluateSets(counts, jokers, ctx, floor = -Infinity) {
   }
   const cap = (setTiles) => (setTiles >= N ? 0 : Math.floor((N - setTiles) / 3));
   let best = floor - jokers * JOKER_VALUE;
-  const others = [[], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], []];
+  let tiles = 0;
+  for (let f = 0; f < FACES; f++) tiles += counts[f];
+  const others = Array.from({ length: tiles + 2 }, () => []); // scratch per search depth
   function rec(f, setTiles, nParts, acc, remaining, depth) {
     while (f < FACES && counts[f] === 0) f++;
     if (f === FACES) { if (acc > best) best = acc; return; }
@@ -175,4 +180,34 @@ export function evaluate(counts, jokers, ctx, floor = -Infinity) {
   const sets = evaluateSets(counts, jokers, ctx, floor);
   const pairs = evaluatePairs(counts, jokers, ctx);
   return pairs > sets ? { value: pairs, route: 'pairs' } : { value: sets, route: 'sets' };
+}
+
+/**
+ * One draw ahead (lookahead >= 3): the expected gain of the next pile draw for a hand of tile ids, over the
+ * faces the bot believes are live (weighted by live copies). Only faces that touch the hand can help; the
+ * rest are skipped. A drawn tile that would only sit loose gains nothing.
+ */
+export function expectedDrawGain(hand, okey, ctx) {
+  const { counts, jokers } = handVector(hand, okey);
+  const base = evaluate(counts, jokers, ctx).value;
+  const near = new Uint8Array(FACES);
+  for (let f = 0; f < FACES; f++) {
+    if (!counts[f]) continue;
+    near[f] = 1;
+    for (const { f: g } of runNeighbors(f)) near[g] = 1;
+    for (const g of groupNeighbors(f)) near[g] = 1;
+  }
+  let total = 0, gain = 0;
+  for (let f = 0; f < FACES; f++) {
+    const n = ctx.live[f];
+    if (!n) continue;
+    total += n;
+    if (!near[f]) continue;
+    counts[f]++;
+    const floor = base + ctx.single[f];     // a tile that only sits loose gains nothing
+    const d = evaluate(counts, jokers, ctx, floor).value - floor;
+    counts[f]--;
+    if (d > 0) gain += n * d;
+  }
+  return total ? gain / total : 0;
 }

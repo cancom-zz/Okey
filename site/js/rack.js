@@ -26,7 +26,8 @@ export function moveIn(slots, id, to) {
 
 // Lay groups out tier by tier with one gap between them (fewer gaps when it would not fit).
 export function layoutFromGroups(groups) {
-  for (const gap of [1, 0]) {
+  // sets keep a gap between them; loose leftovers too when there is room, else they close up
+  for (const [setGap, looseGap] of [[1, 1], [1, 0], [0, 0]]) {
     const s = Array(SLOTS).fill(null);
     let tier = 0, col = 0, ok = true;
     for (const g of groups) {
@@ -35,7 +36,7 @@ export function layoutFromGroups(groups) {
         if (tier + 1 < TIERS && g.length <= COLS) { tier++; col = 0; } else { ok = false; break; }
       }
       g.forEach((id, i) => { s[tier * COLS + col + i] = id; });
-      col += g.length + gap;
+      col += g.length + (g.loose ? looseGap : setGap);
     }
     if (ok) return s;
   }

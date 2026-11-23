@@ -8,7 +8,7 @@ import { sfx } from './sound.js';
 
 const tid = (c, n, copy = 0) => c * 26 + copy * 13 + (n - 1);
 
-export function renderHome(root, { solo, create, join }) {
+export function renderHome(root, { solo, resume, create, join }) {
   const lv = S.settings.soloLevel;
   root.innerHTML = `<section class="home">
     <div class="hero">
@@ -21,6 +21,7 @@ export function renderHome(root, { solo, create, join }) {
     <div class="doors">
       <div class="door solo">
         <button class="bigbtn gold" id="hSolo"><span class="ic">🤖</span><span class="tx"><b>${t('home.solo')}</b><small>${t('home.soloSub')}</small></span><span class="chev">›</span></button>
+        <button class="resume" id="hResume" hidden>↻ ${t('home.resume')}</button>
         <div class="lvrow"><span>${t('home.level')}</span><div class="seg sm" id="hLv">${LEVELS.map(l => `<button data-v="${l}" class="${l === lv ? 'on' : ''}">${t('level.' + l)}</button>`).join('')}</div></div>
       </div>
       <div class="door friends">
@@ -34,6 +35,7 @@ export function renderHome(root, { solo, create, join }) {
     <p class="hfoot">${t('home.foot')} · <a class="tiplink2" href="${KOFI_URL}" target="_blank" rel="noopener">${t('home.tipFoot')}</a></p>
   </section>`;
   $('#hSolo').onclick = () => { sfx('clack'); solo(S.settings.soloLevel); };
+  $('#hResume').onclick = () => { sfx('clack'); resume(); };
   $('#hLv').onclick = e => {
     const b = e.target.closest('button'); if (!b) return;
     S.settings.soloLevel = b.dataset.v; save();

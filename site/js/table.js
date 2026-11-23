@@ -48,6 +48,7 @@ export class TableScreen {
           <div class="okeyis" id="okeyis" hidden><small>${t('table.okey')}</small><div class="okt"></div></div>
           <div class="fz" id="fz" aria-hidden="true"><span></span></div>
         </div>
+        <div class="melds" id="melds" hidden></div>
         <div class="status" id="status" role="status" aria-live="polite"></div>
         <div class="mine seat p0" data-p="0">
           <div class="plate"><div class="av"><svg class="ring" viewBox="0 0 44 44" aria-hidden="true"><circle class="rbg" cx="22" cy="22" r="20"/><circle class="rfg" cx="22" cy="22" r="20" stroke-dasharray="${RING}" stroke-dashoffset="0"/></svg><span class="emo"></span><b class="secs"></b></div>
@@ -106,17 +107,17 @@ export class TableScreen {
       const byH = (H * 0.31 - 16) / 3.3;
       tw = Math.floor(Math.min(byW, byH, 52));
     } else {
-      const byW = (W * (wide ? 0.5 : 0.56)) / 13;
+      const byW = (W * (wide ? 0.54 : 0.56)) / 13;
       const byH = (H * (wide ? 0.27 : 0.33) - 14) / 3.3;
       tw = Math.floor(Math.min(byW, byH, 60));
     }
     tw = Math.max(20, tw);
     const gap = tw >= 34 ? 2 : 1;
     this.rack.setSize(tw, gap);
-    const dw = Math.round(Math.max(24, Math.min(land ? tw * 0.98 : tw * 1.18, wide ? 50 : 38, H / 13)));
+    const dw = Math.round(Math.max(24, Math.min(land ? tw * (wide ? 1.12 : 1.0) : tw * 1.32, wide ? 62 : 42, H / (land ? 9 : 14.5))));
     this.felt.style.setProperty('--dw', dw + 'px');
     this.felt.style.setProperty('--tw', tw + 'px');
-    this.felt.style.setProperty('--bw', Math.round(Math.max(7, dw * (wide ? 0.42 : 0.36))) + 'px');
+    this.felt.style.setProperty('--bw', Math.round(Math.max(6, land ? dw * (wide ? 0.27 : 0.3) : Math.min(dw * 0.22, (H - 330) / 30))) + 'px');
   }
 
   // ---- incoming ----
@@ -126,7 +127,7 @@ export class TableScreen {
     const evs = dedupe(events, view.you);
     const animate = (prev ? true : evs.length && evs[0].type === 'roundStart') && evs.length && evs.length <= 8 && !reduced() && document.visibilityState === 'visible';
     this.view = view;
-    if (!prev || !animate) {
+    if (!animate) {
       if (evs.some(e => e.type === 'roundStart') || !this.disp) this.newRound(view);
       this.disp = dispFrom(view);
       this.render();
@@ -188,6 +189,7 @@ export class TableScreen {
     }
     this.setPile(d.pile);
     this.setIndicator(r ? r.indicator : null);
+    this.renderMelds();
     this.renderPlacard();
     this.status();
     this.buttons();
@@ -200,6 +202,17 @@ export class TableScreen {
     this.tick();
   }
 
+  // Sets laid face up on the table (101 Okey): view.round.melds = [[group, ...] per seat], when a variant has them.
+  // Classic Okey has none, so this stays hidden; it is here so the renderer doesn't assume classic.
+  renderMelds() {
+    const el = $('#melds', this.root), r = this.view.round, m = r && Array.isArray(r.melds) ? r.melds : null;
+    el.hidden = !m || !m.some(x => x && x.length);
+    if (el.hidden) { el.innerHTML = ''; return; }
+    el.innerHTML = [0, 1, 2, 3].map(p => {
+      const groups = m[this.seatAt(p)] || [];
+      return groups.length ? `<div class="mrow p${p}">${groups.map(g => `<div class="rg">${g.map(id => tileHTML(id, r.okey, 'sm')).join('')}</div>`).join('')}</div>` : '';
+    }).join('');
+  }
   renderPlacard() {
     const v = this.view, r = v.round, pl = $('.placard', this.root);
     pl.innerHTML = `<div class="pl1"><b>${this.ctx.solo ? t('placard.practice') : t('placard.table', { code: esc(v.code) })}</b><span class="led">${r ? t('placard.round', { n: r.number }) : ''}</span></div>
@@ -628,7 +641,7 @@ export class TableScreen {
     }
     if (isMatch) {
       await wait(900);
-      const winners = (ev && ev.winners) || v.seats.map((s, i) => i).filter(i => v.seats[i].score === Math.max(...v.seats.map(s => s.score)));
+      const winners = (ev && ev.winners) || v.winners || v.seats.map((s, i) => i).filter(i => v.seats[i].score === Math.max(...v.seats.map(s => s.score)));
       const iWon = winners.includes(v.you);
       recordMatch(v, iWon, this.ctx.solo);
       if (iWon) { celebrate(t('cele.champion'), t('cele.championSub'), { sound: 'fanfare', sparks: 90 }); tipNote(true); }

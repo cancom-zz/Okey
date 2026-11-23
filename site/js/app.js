@@ -7,13 +7,23 @@ import { sfx, setSound } from './sound.js';
 import { renderHome } from './home.js';
 import { LobbyScreen } from './lobby.js';
 import { TableScreen } from './table.js';
-import { createRoom, soloTransport, roomTransport } from './net.js';
+import { createRoom, soloTransport, roomTransport, hasSoloTable } from './net.js';
 import { openSettings, openRules, openStats, openProfile, applyFelt, confirmSheet } from './sheets.js';
 import { openTip, setResting } from './tip.js';
 import { getLang } from './i18n.js';
+import { loadEngine } from './tiles.js';
 
 const screen = () => $('#screen');
+// Practice has no turn clock. ?points=N&rounds=N (dev/tests) make a short practice match.
+function soloSettings() {
+  const q = new URLSearchParams(location.search), st = { turnSeconds: 0 };
+  const pts = +q.get('points'), rounds = +q.get('rounds');
+  if (pts >= 1 && pts <= 99) st.startPoints = pts;
+  if (rounds >= 1 && rounds <= 99) st.rounds = rounds;
+  return st;
+}
 let room = null;
+let freshSolo = false;   // set by the home button; a reload of #/solo continues the saved practice table
 
 class Room {
   constructor({ code, solo, level, resume = false }) {
@@ -22,9 +32,10 @@ class Room {
     this.tr = null; this.closed = false;
   }
   async open() {
+    await loadEngine();   // sort buttons and the finish hint use the shared engine
     try {
       this.tr = this.solo
-        ? await soloTransport({ player: player(), lang: getLang(), levels: [this.level, this.level, this.level], settings: { turnSeconds: 0 }, resume: this.resume })
+        ? await soloTransport({ player: player(), lang: getLang(), levels: [this.level, this.level, this.level], settings: soloSettings(), resume: this.resume })
         : await roomTransport(this.code);
     } catch (e) { console.error(e); toast(t(e && e.code === 'noRoom' ? 'err.noRoom' : 'err.connect'), 'err', 4000); go('#/'); return; }
     if (this.closed) { this.tr.close(); return; }
@@ -63,6 +74,8 @@ class Room {
       if (v.code && !this.solo && v.code !== this.code) this.code = v.code;
       if (v.phase === 'lobby') {
         if (this.solo) { if (!this.tr.selfHello) this.soloSetup(v); this.showWaiting(); return; }
+        // friends open the link and sit straight down at the first empty seat (once; they can move later)
+        if (v.you == null && !this.autoSat) { const seat = v.seats.findIndex(x => x.kind === 'empty'); if (seat >= 0) { this.autoSat = true; this.send({ t: 'sit', seat }); } }
         if (this.uiKind !== 'lobby') { this.swap('lobby'); }
         this.ui.update(v);
         topbar();
@@ -122,19 +135,22 @@ async function route() {
   document.body.dataset.screen = h === '#/solo' ? 'table' : m ? 'table' : 'home';
   if (!S.name) { await new Promise(res => openProfile(true, res)); }
   if (h === '#/solo') {
-    room = new Room({ solo: true, level: S.settings.soloLevel, code: 'SOLO' });
+    room = new Room({ solo: true, level: S.settings.soloLevel, code: 'SOLO', resume: !freshSolo });
+    freshSolo = false;
     topbar(); room.open();
   } else if (m) {
     room = new Room({ code: m[1].toUpperCase(), solo: false });
     topbar(); room.open();
   } else {
     renderHome(screen(), {
-      solo: () => go('#/solo'),
+      solo: () => { freshSolo = true; go('#/solo'); },
+      resume: () => { freshSolo = false; go('#/solo'); },
       create: async () => {
         try { const { code } = await createRoom({}); go('#/m/' + code); } catch (e) { console.error(e); toast(t('err.create'), 'err', 3600); }
       },
       join: code => go('#/m/' + code),
     });
+    hasSoloTable().then(yes => { const b = $('#hResume'); if (b && yes) b.hidden = false; });
     topbar();
   }
 }

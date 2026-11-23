@@ -102,7 +102,27 @@ function sameFace2(a, b, okey) { const fa = faceOf(a, okey), fb = faceOf(b, okey
 
 // Sort helper for the "Seri diz" / "Çift diz" buttons. Engine arrange() when present, else a simple sort.
 export function arrange(ids, okey, mode) {
-  if (engine && engine.arrange) { try { return engine.arrange(ids, okey, mode); } catch { /* fall through */ } }
+  if (engine && engine.arrange) {
+    try {
+      const g = engine.arrange(ids, okey, mode);
+      // the engine ends with one array of leftovers: split it by colour so it doesn't read as a set
+      const left = g.pop() || [], byCol = new Map();
+      for (const id of left) { const f = faceOf(id, okey); const k = f.wild ? 9 : f.color; if (!byCol.has(k)) byCol.set(k, []); byCol.get(k).push(id); }
+      // within a colour, break where the numbers stop running (a pair stays together); chunks are 'loose'
+      const loose = [];
+      for (const [, ids2] of [...byCol.entries()].sort((a, b) => a[0] - b[0])) {
+        let cur = [];
+        for (const id of ids2) {
+          const f = faceOf(id, okey), p = cur.length ? faceOf(cur[cur.length - 1], okey) : null;
+          if (p && !f.wild && !(f.num === p.num || f.num === p.num + 1)) { loose.push(cur); cur = []; }
+          cur.push(id);
+        }
+        if (cur.length) loose.push(cur);
+      }
+      loose.forEach(x => { x.loose = true; });
+      return [...g.filter(x => x.length), ...loose];
+    } catch { /* fall through */ }
+  }
   const key = id => { const f = faceOf(id, okey); return f.wild ? 999 : f.color * 20 + f.num; };
   const sorted = ids.slice().sort((a, b) => key(a) - key(b));
   if (mode === 'pairs') {
