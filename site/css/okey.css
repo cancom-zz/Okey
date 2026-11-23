@@ -670,9 +670,22 @@ html.noanim *,html.noanim *::before,html.noanim *::after{animation:none!importan
 .d101 .dl.lead small{color:#9cebbd;font-weight:800}
 .center.small,p.center{text-align:center}
 @media (orientation:landscape) and (max-height:520px){.d101 .how,.d101 .pen{display:none}}
-.toggles{display:flex;flex-wrap:wrap;gap:5px;justify-content:flex-end}
-.tg{height:28px;padding:0 10px;border-radius:999px;font-size:11.5px;font-weight:700;color:var(--muted);background:rgba(0,0,0,.28);border:1px solid rgba(255,255,255,.12)}
-.tg.on{color:#062a1b;background:linear-gradient(#9cebbd,#4fbf80);border-color:#c8f5da}
-.tg.on::before{content:"✓ "}
-.opt.rules{align-items:flex-start}
+.toggles{display:flex;flex-direction:column;gap:8px;margin-top:8px}
+.hrule{display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:10px 12px 10px 40px;border-radius:12px;text-align:left;position:relative;background:rgba(255,255,255,.05);border:1.5px solid rgba(255,255,255,.1)}
+.hrule b{font-size:14px}.hrule small{font-size:12px;color:var(--muted);line-height:1.3}
+.hrule::before{content:"";position:absolute;left:12px;top:12px;width:18px;height:18px;border-radius:5px;border:1.5px solid rgba(241,212,138,.5)}
+.hrule.on{border-color:rgba(127,224,168,.7);background:rgba(127,224,168,.1)}
+.hrule.on::before{content:"✓";display:grid;place-items:center;font:900 12px/1 var(--sans);color:#062a1b;background:#9cebbd;border-color:#9cebbd}
+.lctl .opt .mini{margin-right:auto;margin-left:8px}
+/* the lobby table takes whatever height is left */
+.ltable{flex:1 1 0;min-height:0}
+.lfelt{width:auto;height:100%;max-width:100%;max-height:min(100%,360px)}
+@media (orientation:portrait) and (max-height:620px){.lseat{width:96px}.spot{min-width:78px;padding:4px 6px}.spot .av{font-size:20px}.spot .tg{display:none}.lctl .opt{padding:5px 0}}
 .rtabs{width:max-content;margin:2px 0 6px}
+.felt.v101 .fz{display:none}
+.lvrow .seg button{padding:6px 7px}
+@media (orientation:portrait) and (max-height:620px){.fan{height:clamp(60px,12vh,90px)}.fan .tile{--tw:clamp(36px,7.4vh,50px)}.logo{font-size:clamp(40px,8.5vh,56px)}.home{gap:8px}}
+.spot.empty.act{cursor:pointer;border-color:rgba(241,212,138,.55);background:rgba(241,212,138,.08)}
+.spot.empty.act .nm{color:var(--gold2);font-weight:700}
+.spot.empty.act .av{color:var(--gold2)}
+.spot.empty.act:active{transform:scale(.97)}

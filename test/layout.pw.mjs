@@ -195,6 +195,24 @@ if (only !== 'e2e') for (const [w, h] of SIZES) {
   await p.screenshot({ path: join(SHOTS, `result-${tag}.png`) });
   await checkFit(p, 'result', ['.rv-card .tile', '.rv-acts .btn', '.deltas .dl', '.rverd']);
   await p.context().close();
+
+  // 101 Okey: a practice table some turns in (melds on the table once players open)
+  p = await page(w, h, { clock: true });
+  await p.goto(`${BASE}/?anim=0&variant=101&rounds=1#/solo`);
+  await p.clock.runFor(500);
+  await p.waitForSelector('.rack .rt', { timeout: 10_000 });
+  const st101 = { took: false, opened: 0, laid: 0, added: true, islek: 0 };   // no drag here: just the layout
+  const res101 = await play101(p, 40_000, st101);
+  await p.screenshot({ path: join(SHOTS, `t101-${tag}.png`) });
+  await checkFit(p, '101 table', TABLE_SEL);
+  const tw101 = await p.evaluate(() => document.querySelector('.rack .rt').getBoundingClientRect().width);
+  if (tw101 < 21) fail(`101: rack tiles only ${tw101.toFixed(1)}px wide`); else ok(`101: rack tiles ${tw101.toFixed(1)}px wide (15 a tier)`);
+  if (res101 === 'result') {
+    await p.screenshot({ path: join(SHOTS, `r101-${tag}.png`) });
+    await checkFit(p, '101 result', ['.rv-acts .btn', '.deltas .dl', '.rverd']);
+  }
+  if (p.errors.length) fail(`101 table: page errors: ${p.errors.slice(0, 3).join(' | ')}`);
+  await p.context().close();
 }
 
 // ---- a full practice match on the real LocalTable: deal → turns → round end → next round → match end ----
@@ -220,6 +238,32 @@ if (only !== 'layout') {
   if (!(await p.$('.podium'))) fail('no podium at match end'); else ok('match end: podium shown');
   await p.screenshot({ path: join(SHOTS, 'e2e-matchend.png') });
   if (p.errors.length) fail(`e2e: page errors: ${p.errors.slice(0, 3).join(' | ')}`);
+  await p.context().close();
+}
+
+// ---- 101 Okey end to end: take + put back, open, lay off onto a table meld, the işlek warning, the result ----
+if (only !== 'layout') {
+  console.log('\n101 practice (390x600, up to 4 rounds)');
+  const p = await page(390, 600, { clock: true });
+  await p.goto(`${BASE}/?anim=0&variant=101&rounds=4#/solo`);
+  await p.clock.runFor(500);
+  await p.waitForSelector('.rack .rt', { timeout: 10_000 });
+  const stats = { took: false, opened: 0, laid: 0, added: false, islek: 0 };
+  for (let r = 0; r < 4; r++) {
+    const res = await play101(p, 30 * 60_000, stats);
+    if (res !== 'result') { fail(`101 round ${r + 1} never ended`); break; }
+    const story = (await p.textContent('.rverd')).trim();
+    if (!(await p.$('.deltas.d101 .dl'))) fail('101 result has no per-seat rows');
+    ok(`101 round ${r + 1} ended: “${story}”`);
+    await p.screenshot({ path: join(SHOTS, `e2e101-round${r + 1}.png`) });
+    if (stats.took && stats.opened && stats.added) break;
+    await p.click('#rvNext'); await p.clock.runFor(1500);
+  }
+  stats.took ? ok('101: took the left discard and put it back') : fail('101: never took and put back a discard');
+  stats.opened ? ok(`101: opened ${stats.opened}× with Best opening + Open (laid more ${stats.laid}×)`) : fail('101: never opened in 4 rounds');
+  if (!stats.added) fail('101: never added a tile to a table meld');
+  ok(`101: işlek warnings confirmed: ${stats.islek}`);
+  if (p.errors.length) fail(`101 e2e: page errors: ${p.errors.slice(0, 3).join(' | ')}`);
   await p.context().close();
 }
 

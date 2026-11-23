@@ -186,6 +186,7 @@ export class TableScreen {
 
   quietEvent(e) {
     if (e.type === 'showIndicator') this.showIndicatorFx(e, false);
+    if (e.type === 'penalty') toast(t(e.reason === 'okeyDiscard' ? 't101.penOkey' : 't101.penIslek', { name: esc((this.view.seats[e.seat] || {}).name || ''), n: e.points }), 'err', 2600);
   }
 
   // ---- full render from this.view + this.disp ----
@@ -874,6 +875,8 @@ export class TableScreen {
       recordMatch(v, iWon, this.ctx.solo);
       if (iWon) { celebrate(t('cele.champion'), t('cele.championSub'), { sound: 'fanfare', sparks: 90 }); tipNote(true); }
       else banner(t('cele.matchOver'), t('cele.matchWinner', { name: winners.map(i => v.seats[i].name).join(' & ') }), 'gold');
+      await wait(2300);   // the banner first, then the standings (never one over the other)
+      clearBanners();
       this.showPodium();
     }
     tipCheck();
