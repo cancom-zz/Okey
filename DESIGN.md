@@ -386,9 +386,12 @@ and has no other input (no match state, pile, other hands or other bots). `test/
 through a Proxy view that throws on any other field and on any write.
 
 Files: `faces.js` (face indices 0..51, wild okeys apart), `evaluate.js` (hand value, outs, one-draw
-look-ahead), `memory.js` (imperfect event memory) are variant-neutral and reused by 101 bots; `classic.js`
-is the classic Okey turn policy; `index.js` holds levels and `createBot`. No module-level mutable state:
-each bot owns its seeded RNG (`seededRng`, state in the snapshot), memory and round state. No `Math.random`.
+look-ahead), `memory.js` (imperfect event memory; understands classic `draw` and 101 `take`/`undoTake`) and
+`defense.js` (what the next player seems to collect) are variant-neutral; `classic.js` is the classic turn
+policy, `okey101.js` the 101 one; `index.js` holds levels and `createBot`. **One brain plays both variants:**
+`decide`/`delayMs` pick the policy from `view.settings.variant`, with separate per-variant state (both in the
+snapshot), so the API is the same. No module-level mutable state: each bot owns its seeded RNG (`seededRng`,
+state in the snapshot), memory and round state. No `Math.random`.
 
 **Levels** (`LEVELS[id] = { id, name (tr), en, params }`, frozen, ladder order in `LEVEL_IDS`):
 
@@ -423,14 +426,47 @@ decay ≥ 0.005, lookahead 1..4, speed 0.25..3, the rest 0..1 (pairsBias 0..2). 
 - `gamble`: with a finish in hand, an okey in it and ≥ 20 tiles in the pile, the chance to hold one more
   turn for an okey finish (double) when it believes ≥ 5 live tiles would allow it.
 - `speed`: thinking-time multiplier. `delayMs` = base by move (draw 750, discard 1000, show 1000, finish
-  1700 ms) × (1 + 0.9 × how close the call was) + 500 on a first discard, × speed × jitter 0.85..1.15,
-  clamped to 350..4000 ms.
+  1700, 101 open 1400, 101 table step 800 ms) × (1 + 0.9 × how close the call was) + 500 on a first
+  discard; in 101 × 1.4 for the first step of a turn, × 0.55 for later table steps (× 0.7 for the final
+  discard); then × speed × jitter 0.85..1.15, clamped to 350..4000 ms.
 
 Always: finishes when it can (highest-scoring option: pairs+okey > pairs = okey > normal), takes a discard
 that finishes or is an okey, never discards an okey otherwise, never throws back the tile it just took.
 
 Strength (test/bots.test.mjs, 160 rounds, one bot of each level per table, every level in every seat):
 round wins Çırak 9%, Kalfa 16%, Usta 34%, Uzman 37%. (800 rounds: 12 / 20 / 32 / 33%.)
+
+**101 policy** (`okey101.js`, one action per `decide`; the host calls it again after each step). The view
+adds `round.{table, opened, required, taken}`, `seats[i].handCount` and the public 101 settings
+(`openingValue`, `minPairs`, `aceHighValue`, `pairsOpening`, `pairsOnly`, `pairsCanAdd`, `addOnOpeningTurn`,
+`okeySwap`); table melds count as visible tiles in the live table.
+
+- Draw: take the previous player's discard only when it reaches the table this turn (opens with it when not
+  opened, else lays it off, takes an okey back with it, or completes a new set/pair); otherwise the pile.
+  The plan is fixed before taking, so `undoTake` is only a fallback (never needed in tests). Blunder: half as
+  often, missing a good take.
+- Opening: with sets ≥ `required.value` (all of `bestSets`), else with pairs ≥ `required.pairs`. Beginners
+  open as soon as they can. With `lookahead` ≥ 3 a bot waits for sets instead of a pairs opening (a pairs
+  opener's hand counts double) while the pile has > 10 tiles, the round looks safe and sets are within 25.
+  With `gamble`, it may hold a sets opening that would leave 2–4 tiles, hoping to open and finish in one
+  turn (elden, double), only with ≥ 10 tiles in the pile and no opponent close to finishing.
+- After opening, in order: take okeys back (`swapOkey`), lay new sets (pairs openers: pairs, okeys only
+  when nearly out), lay off real tiles (highest first), then okeys: the last okey is kept to finish with
+  (double); with one other tile left, `gamble` may keep the okey one more turn; otherwise okeys go to the
+  table when the round looks close to ending or few tiles are left. Beginners sometimes forget to lay off
+  for a turn (blunder × 0.4).
+- Discard: never an okey, never an işlek tile while a safe one exists (blunder × 0.1: a beginner's slip,
+  101 penalty). Unopened: keep structure (the classic evaluation) and opening value (`bestSets` value), and
+  throw low tiles first; with `lookahead` ≥ 3, also the expected opening value gained by the next draw over
+  live faces (top 4 discards, 6 at lookahead 4). In pairs mode (pairs opener, or ≥ 4 pairs and weak sets):
+  keep pairs and singles whose copy is live. Opened: shed high tiles more as the round nears its end (an
+  opponent opened with few tiles, or a short pile). Defense as classic (pile start 20).
+- Finish: discarding the last tile (an okey last doubles).
+
+101 strength (penalty points, lower is better; one bot of each level per table, every level in every seat):
+1,440 rounds: Çırak 67.4, Kalfa 58.6, Usta 54.8, Uzman 54.8 per round; the engine's auto-play alone ≈ 115.
+test/bots101.test.mjs (216 rounds): Çırak 65.6, Kalfa 70.3, Usta 60.6, Uzman 30.2 (one round's ±202 swings
+make small samples noisy; the test asserts Uzman ≥ 10% below Çırak and below Kalfa).
 
 ## 101 Okey (`site/shared/okey101/`)
 
@@ -525,9 +561,11 @@ discard the highest-value `arrange` leftover, never an işlek tile or an okey if
 101: `rounds` 1–11, default 9 when switching from "play to 0"; `scoring` keys above, ints 0–999; `doubles`
 booleans; the rule flags; `openingValue` 1–300, `minPairs` 2–11, `aceHighValue` 1/11/14). `cleanAction`
 knows the 101 actions. The view's `settings` always has `variant` (101 adds its rule fields). `onResult`
-summaries carry `variant`. **There are no 101 bots yet:** a bot seat in a 101 match has no brain and is
-auto-played with `timeoutAction` (900 ms for its first step, 450 ms per later step). A timed-out human's whole
-turn is auto-played (up to 64 steps).
+summaries carry `variant`. **101 bots** use the same brain as classic (it reads `settings.variant` from the
+view): the host plans and times each step like a classic bot step (`delayMs` then `decide`; the bot makes the
+first step of a turn slower and the table steps quicker). An illegal or missing bot step falls back to one
+`timeoutAction` step, and a bot turn longer than `MAX_BOT_STEPS_101` (40) steps is finished by auto-play. A
+timed-out human's whole turn is auto-played (up to 64 steps).
 
 ## Statistics and achievements (phase 2)
 

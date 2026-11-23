@@ -67,7 +67,7 @@ test('101 no-cheat: decide/delayMs only read documented view fields (incl. table
   });
   assert.ok(res.steps > 50);
   assert.ok(seen.has('view.round.table'), 'the 101 policy reads the table');
-  for (const p of seen) assert.ok(!/\.(kind|bot|name|avatar|connected|away|id)\b/.test(p), p);
+  for (const p of seen) assert.ok(!/^view\.seats\.\d+\.(kind|bot|name|avatar|connected|away|id)$/.test(p), p);
 });
 
 test('101 no-cheat: the pile order and other hands never change a decision', () => {

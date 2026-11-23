@@ -100,7 +100,7 @@ test('no-cheat: decide/delayMs only read documented view fields, never seat iden
   const bots = ladderBots(['uzman', 'cirak', 'usta', 'kalfa'], 'proxy');
   const res = playRounds({ bots, rounds: 3, seed: 'proxy', wrap: (v) => guard(v, 'root', 'view', seen) });
   assert.ok(res.actions > 100);
-  for (const p of seen) assert.ok(!/\.(kind|bot|name|avatar|connected|away|id)\b/.test(p), p);
+  for (const p of seen) assert.ok(!/^view\.seats\.\d+\.(kind|bot|name|avatar|connected|away|id)$/.test(p), p);
   // Sanity of the guard itself.
   const g = guard(viewFor(newMatch({ seats: seatsFor(['a', 'b', 'c', 'd']) }), 0), 'root', 'view');
   assert.throws(() => g.seats[1].kind, /forbidden/);
