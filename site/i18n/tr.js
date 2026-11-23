@@ -15,6 +15,7 @@ export default {
   'home.level': 'Rakipler',
   'home.friends': 'Arkadaşlarla oyna',
   'home.friendsSub': 'Masa kur, linki paylaş',
+  'home.friendsLive': 'Arkadaş masaları canlı sitede açılır',
   'home.codePh': 'Masa kodu ile katıl',
   'home.codeLabel': 'Masa kodu',
   'home.join': 'Katıl',

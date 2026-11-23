@@ -51,3 +51,9 @@ changing any interface, and update it in the same commit as the code.
 
 ## Deploy
 See DEPLOY.md. Build command empty, deploy command `npx wrangler deploy`.
+
+## Playtest
+Private claude.ai artifact https://claude.ai/artifact/J5MjxRd1fRmjaUHqMNgm7V (solo practice only; friends'
+tables need the Worker). `node tools/artifact.mjs OUT_DIR` copies site/ and prints the supporting files;
+publish OUT_DIR/index.html with `root: OUT_DIR` and that file list to the same url (read it first from a new
+session). `window.OKEY_PLAYTEST` makes the friends button explain that tables open on the live site.

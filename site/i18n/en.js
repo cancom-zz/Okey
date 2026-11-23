@@ -14,6 +14,7 @@ export default {
   'home.level': 'Opponents',
   'home.friends': 'Play with friends',
   'home.friendsSub': 'Set up a table, share the link',
+  'home.friendsLive': 'Friends’ tables open on the live site',
   'home.codePh': 'Join with a table code',
   'home.codeLabel': 'Table code',
   'home.join': 'Join',

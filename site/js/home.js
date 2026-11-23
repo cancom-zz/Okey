@@ -41,13 +41,17 @@ export function renderHome(root, { solo, resume, create, join }) {
     S.settings.soloLevel = b.dataset.v; save();
     root.querySelectorAll('#hLv button').forEach(x => x.classList.toggle('on', x === b)); sfx('tick');
   };
-  $('#hCreate').onclick = () => { sfx('clack'); create(); };
+  // The claude.ai playtest has no server: friends' tables only work on the deployed site.
+  const offline = globalThis.OKEY_PLAYTEST === true;
+  if (offline) $('#hCreate small').textContent = t('home.friendsLive');
+  $('#hCreate').onclick = () => { sfx('clack'); if (offline) toast(t('home.friendsLive')); else create(); };
   const code = $('#hCode');
   code.oninput = () => { code.value = [...code.value.toUpperCase()].filter(ch => CODE_CHARS.includes(ch)).join('').slice(0, 6); code.classList.remove('bad'); };
   $('#hJoin').onsubmit = e => {
     e.preventDefault();
     const c = code.value.trim().toUpperCase();
     if (c.length !== 6 || [...c].some(ch => !CODE_CHARS.includes(ch))) { code.classList.add('bad'); toast(t('home.badCode'), 'err'); return; }
+    if (offline) { toast(t('home.friendsLive')); return; }
     join(c);
   };
 }
