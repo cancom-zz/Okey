@@ -16,6 +16,10 @@ const DEEP_CANDIDATES = 4;    // lookahead 3: discards that get the one-draw loo
 const DEEP_WINDOW = 0.5;      // lookahead 3: only discards within this much of the best get the look-ahead
 const IRRELEVANT = BLUNDER_MARGIN + DEFENSE_CAP + 0.5; // DEFENSE_CAP from defense.js
 
+const TURN_FACTOR = 1.3;
+const TENPAI_VALUE = 12.5;    // lookahead 4: from here on, count exact waits
+const WAIT_CANDIDATES = 4;
+const WAIT_WEIGHT = 0.12;     // value per live winning tile      // own draws per pile/4 turns, counting tiles taken from the discard
 const finishPoints = (o) => (o.kind === 'pairs' ? 4 : 2) * (o.okeyFinish ? 2 : 1);
 
 /** Value of a tile list for this bot (higher = closer to finishing). */
@@ -58,12 +62,61 @@ function rankDiscards(hand, view, ctx, danger, exclude, deep = ctx.lookahead >= 
     const maxDeep = wide ? 2 * DEEP_CANDIDATES : DEEP_CANDIDATES, window = wide ? 2 * DEEP_WINDOW : DEEP_WINDOW;
     for (let i = 0; i < out.length && i < maxDeep; i++) {
       if (out[i].value < top - window) break;
-      out[i].value += expectedDrawGain(out[i].rest, okey, ctx);
+      out[i].value += expectedDrawGain(out[i].rest, okey, ctx) * (wide ? (globalThis.__botTune?.eWeight ?? 1) : 1); // TEMP hook
+    }
+    // Lookahead 4, one tile from finishing: count the live tiles that would really finish (exact waits).
+    if (wide && (globalThis.__botTune?.waits ?? true) && out[0].value >= TENPAI_VALUE) { // TEMP hook
+      for (let i = 0; i < out.length && i < WAIT_CANDIDATES; i++) {
+        if (out[i].value < out[0].value - window) break;
+        out[i].value += WAIT_WEIGHT * liveWaits(out[i].rest, okey, ctx);
+      }
     }
   }
   for (const x of out) x.score = x.value - (danger ? danger(faceIndex(x.tile, okey)) : 0);
   out.sort((a, b) => b.score - a.score);
   return out;
+}
+
+/**
+ * How many live tiles would finish this 14-tile hand on the next draw (the okey's two copies included).
+ * The hand evaluation pre-filters faces (a finish scores at least 14) before the engine confirms.
+ */
+export function liveWaits(rest14, okey, ctx) {
+  const { counts, jokers } = handVector(rest14, okey);
+  const have = new Set(rest14);
+  let waits = 0;
+  const tryTile = (id, copies, addCount) => {
+    if (id == null || !copies) return;
+    if (addCount) addCount(1);
+    const v = evaluate(counts, jokers + (addCount ? 0 : 1), ctx, 13.98).value;
+    if (addCount) addCount(-1);
+    if (v >= 13.99 && finishOptions([...rest14, id], okey).length) waits += copies;
+  };
+  for (let f = 0; f < FACES; f++) {
+    const n = ctx.live[f];
+    if (!n) continue;
+    tryTile(tileForFace(f, okey, rest14), n, (d) => { counts[f] += d; });
+  }
+  // The wild okeys: copies not in hand and not seen (the indicator never shows an okey face).
+  const okeyIds = [0, 1].map((cp) => okey.color * 26 + cp * 13 + okey.num - 1).filter((id) => !have.has(id));
+  if (okeyIds.length && !ctx.seenOkeys) tryTile(okeyIds[0], okeyIds.length, null);
+  return waits;
+}
+
+/** Evaluation options by level: the strongest level (lookahead 4) gets the fuller model. */
+export function contextOptions(params, live, pileCount) {
+  const o = { lookahead: params.lookahead, pairsBias: params.pairsBias };
+  if (params.lookahead >= 4) {
+    const TT = globalThis.__botTune || {}; // TEMP tuning hook
+    let unknown = 0;
+    for (let f = 0; f < FACES; f++) unknown += live[f];
+    o.jokerSets = TT.jokerSets ?? true;
+    if (TT.prob ?? true) {
+      o.unknown = Math.max(1, unknown);
+      o.turnsLeft = Math.max(1, pileCount / 4) * (TT.turnFactor ?? TURN_FACTOR);
+    }
+  }
+  return o;
 }
 
 /** A tile id with face f that is not in `hand` (for "what if I drew f" checks). */
@@ -119,8 +172,8 @@ export function plan(view, mem, params, rng, st) {
   }
 
   const live = mem.liveTable(hand, view);
-  const ctx = makeContext(live, params);
-  const danger = dangerFn(view, mem, params, live, { pileStart: 48 });
+  const ctx = makeContext(live, contextOptions(params, live, r.pileCount));
+  const danger = dangerFn(view, mem, params, live, { pileStart: 48, late: params.lookahead >= 4 && (globalThis.__botTune?.late ?? true) } /* TEMP hook */);
 
   if (r.stage === 'draw') {
     const left = (you + 3) % 4;

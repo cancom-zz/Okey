@@ -8,7 +8,7 @@
 import { isOkey } from '../okey/tiles.js';
 import { bestSets, bestPairs, layoffs, swaps, isIslek, tileValue } from '../okey101/rules.js';
 import { FACES, faceIndex, handVector } from './faces.js';
-import { makeContext, evaluate } from './evaluate.js';
+import { makeContext, evaluate, strongOptions } from './evaluate.js';
 import { dangerFn } from './defense.js';
 
 const PILE_START = 20;
@@ -83,6 +83,53 @@ function openingGain(rest, okey, live, ace, base) {
   return total ? gain / total : 0;
 }
 
+/**
+ * Lookahead 4, unopened: the opening value still to come from leftover partial sets (tiles not in the best
+ * sets), each weighted by its chance to complete within the turns left: sum of P(complete) x set value.
+ */
+export function openingPotential(leftover, okey, live, turnsLeft, unknown) {
+  const faces = [];
+  for (const t of leftover) {
+    const f = faceIndex(t, okey);
+    if (f < FACES) faces.push(f);
+  }
+  const p = (outs) => 1 - Math.pow(Math.max(0, 1 - outs / unknown), turnsLeft);
+  const cands = [];
+  for (let i = 0; i < faces.length; i++) {
+    for (let j = i + 1; j < faces.length; j++) {
+      const a = faces[i], b = faces[j];
+      if (a === b) continue;
+      const ca = Math.floor(a / 13), cb = Math.floor(b / 13), na = (a % 13) + 1, nb = (b % 13) + 1;
+      let outs = 0, value = 0;
+      if (ca !== cb && na === nb) {                       // group pair: any missing color
+        for (let k = 0; k < 4; k++) if (k !== ca && k !== cb) outs += live[k * 13 + na - 1];
+        value = 3 * na;
+      } else if (ca === cb) {
+        const lo = Math.min(na, nb), hi = Math.max(na, nb), base = ca * 13;
+        if (hi - lo === 1) {                              // connector: either end
+          const ends = [lo - 1, hi + 1].filter((x) => x >= 1 && x <= 13);
+          for (const e of ends) outs += live[base + e - 1];
+          value = lo + hi + (ends.length ? ends.reduce((x, y) => x + y, 0) / ends.length : 0);
+        } else if (hi - lo === 2) {                       // gap
+          outs = live[base + lo];
+          value = 3 * (lo + 1);
+        }
+      }
+      if (outs > 0 && value > 0) cands.push({ a: i, b: j, w: p(outs) * value });
+    }
+  }
+  cands.sort((x, y) => y.w - x.w);
+  const used = new Set();
+  let total = 0, n = 0;
+  for (const c of cands) {
+    if (used.has(c.a) || used.has(c.b)) continue;
+    used.add(c.a); used.add(c.b);
+    total += c.w;
+    if (++n >= 4) break;
+  }
+  return total;
+}
+
 export function plan101(view, mem, params, rng, st) {
   const r = view.round;
   if (view.phase !== 'playing' || !r || view.you == null || r.turn !== view.you || !Array.isArray(view.hand)) {
@@ -136,7 +183,8 @@ export function plan101(view, mem, params, rng, st) {
     }
     if (o.pairs) {
       // A pairs opener's hand counts double: experts prefer to wait for sets while that is still realistic.
-      if (params.lookahead >= 3 && !forced && r.pileCount > 10 && risk < 0.4 && o.setsValue >= req.value - 25) return null;
+      if (params.lookahead >= 3 && !(params.lookahead >= 4 && !(globalThis.__botTune?.pairsWait ?? true)) && // TEMP hook
+          !forced && r.pileCount > 10 && risk < 0.4 && o.setsValue >= req.value - 25) return null;
       return o.pairs;
     }
     return null;
@@ -255,7 +303,10 @@ export function plan101(view, mem, params, rng, st) {
     const seen = new Set();
     cands = cands.filter((t) => { const f = faceIndex(t, okey); if (seen.has(f)) return false; seen.add(f); return true; });
 
-    const ctx = makeContext(live, { lookahead: Math.min(params.lookahead, 2), pairsBias: 0, handSize: Math.max(3, hand.length - 1) });
+    const ctx = makeContext(live, {
+      lookahead: Math.min(params.lookahead, 2), pairsBias: 0, handSize: Math.max(3, hand.length - 1),
+      ...(params.lookahead >= 4 && (globalThis.__botTune?.strong101 ?? true) ? strongOptions(live, r.pileCount) : {}), // TEMP hook
+    });
     const danger = dangerFn(view, mem, params, live, { pileStart: PILE_START });
     const pairsMode = opened === 'pairs' ||
       (!opened && S.pairsOpening !== false && bestPairs(hand, okey, { keep: 0 }).count >= Math.max(4, req.pairs - 1) &&
@@ -269,8 +320,13 @@ export function plan101(view, mem, params, rng, st) {
         const { counts, jokers } = handVector(rest, okey);
         value = evaluate(counts, jokers, ctx).value;
         if (!opened) {
-          const sv = bestSets(rest, okey, { ...ace, keep: 0 }).value;
+          const bs = bestSets(rest, okey, { ...ace, keep: 0 });
+          const sv = bs.value;
           value += sv / 20;                                               // progress toward the opening
+          if (ctx.jokerSets && (globalThis.__botTune?.potential ?? true)) { // TEMP hook
+            const inSets = new Set(bs.groups.flat());
+            value += openingPotential(rest.filter((x) => !inSets.has(x)), okey, live, ctx.turnsLeft, ctx.unknown) / 20;
+          }
           return { tile: t, rest, sv, value };
         }
       }

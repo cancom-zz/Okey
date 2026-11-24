@@ -21,7 +21,14 @@ import { FACES, handVector, runNeighbors, groupNeighbors } from './faces.js';
 export const JOKER_VALUE = 1.25;
 const OUTS_VALUE = [0.2, 0.85, 1.05, 1.2, 1.3];   // value of a two-tile partial by live outs (lookahead >= 2)
 
-export function makeContext(live, { lookahead = 2, pairsBias = 1, handSize = 14 } = {}) {
+/**
+ * Evaluation context. live: copies of each face the bot believes are obtainable.
+ * Options: lookahead, pairsBias, handSize; and for the strongest level (lookahead 4):
+ *   jokerSets: okeys are placed by the search (worth the set they complete);
+ *   turnsLeft + unknown: a partial is valued by its chance to complete within the turns left
+ *     (1 - (1 - outs/unknown)^turnsLeft) instead of the fixed outs table.
+ */
+export function makeContext(live, { lookahead = 2, pairsBias = 1, handSize = 14, jokerSets = false, turnsLeft = 0, unknown = 0 } = {}) {
   const single = new Float64Array(FACES);
   for (let f = 0; f < FACES; f++) {
     if (lookahead >= 2) {
@@ -33,18 +40,38 @@ export function makeContext(live, { lookahead = 2, pairsBias = 1, handSize = 14 
       single[f] = 0.1;
     }
   }
+  let pv = lookahead >= 2 ? PV_OUTS : PV_FLAT;
+  if (turnsLeft > 0 && unknown > 0) {
+    pv = new Float64Array(5);
+    const TT = globalThis.__botTune || {}; // TEMP
+    for (let o = 0; o <= 4; o++) pv[o] = (TT.probBase ?? PROB_BASE) + (TT.probSpan ?? PROB_SPAN) * (1 - Math.pow(Math.max(0, 1 - o / unknown), turnsLeft));
+  }
   return {
-    live, lookahead, single, handSize,
-    pv: lookahead >= 2 ? PV_OUTS : PV_FLAT,
+    live, lookahead, single, handSize, jokerSets, turnsLeft, unknown,
+    pv,
     pairsBias,
     pairLive: lookahead >= 2 ? 0.55 : 0.5,
     pairDead: lookahead >= 2 ? 0.05 : 0.5,
   };
 }
 
+/**
+ * The fuller model of the strongest level, for makeContext: okeys in the search, and partials valued by their
+ * chance to complete within the turns left (each player draws about pile/4 more times; ×turnFactor for
+ * tiles taken from the discard). `unknown` = tiles the bot cannot see (sum of live copies).
+ */
+export function strongOptions(live, pileCount, turnFactor = 1.3) {
+  let unknown = 0;
+  for (let f = 0; f < FACES; f++) unknown += live[f];
+  return { jokerSets: true, unknown: Math.max(1, unknown), turnsLeft: Math.max(1, pileCount / 4) * turnFactor };
+}
+
 // Partial value by outs (index 0..4). Beginners (lookahead 1) do not count outs: a partial is a partial.
 const PV_OUTS = Float64Array.from(OUTS_VALUE);
 const PV_FLAT = Float64Array.from([1.05, 1.05, 1.05, 1.05, 1.05]);
+// Probability-based partial value (lookahead 4): PROB_BASE for a dead partial up to PROB_BASE + PROB_SPAN.
+export const PROB_BASE = 0.2;
+export const PROB_SPAN = 1.6;
 
 /** Could a tile of face f be part of some complete set made of tiles present in counts? */
 function canBeInSet(counts, f) {
@@ -68,28 +95,36 @@ function canBeInSet(counts, f) {
 /**
  * Sets route value. `floor` (optional): the caller only cares about values above it; the search prunes
  * against it and returns at least `floor` (exact whenever the true value is higher).
+ * With ctx.jokerSets (lookahead 4) the okeys are part of the search: an okey completes a partial (or makes a
+ * set with a loose tile and the other okey) and is worth the set it completes; otherwise each okey is a flat
+ * JOKER_VALUE added at the end.
  */
 export function evaluateSets(counts, jokers, ctx, floor = -Infinity) {
   const live = ctx.live, single = ctx.single, N = ctx.handSize, pv = ctx.pv;
   const val = (outs) => pv[outs > 4 ? 4 : outs];
-  // Upper bound per tile: 1 if it could sit in a complete set with the tiles present, else at most half
-  // of the best partial (or its loose value). Tiles only get used up, so this stays a valid bound.
+  const inSearch = ctx.jokerSets && jokers > 0;
+  const jk0 = inSearch ? jokers : 0;
+  const flatJ = inSearch ? 0 : jokers * JOKER_VALUE;
+  // Upper bound per tile: 1 if it could sit in a complete set with the tiles present (always, with okeys in
+  // the search), else at most half of the best partial (or its loose value). Tiles only get used up, so
+  // this stays a valid bound. Each okey in the search adds at most JOKER_VALUE.
   const ub = new Float64Array(FACES);
   const half = Math.max(pv[4], pv[0]) / 2;
-  let remaining0 = 0;
+  let remaining0 = jk0 * JOKER_VALUE;
   for (let f = 0; f < FACES; f++) {
     if (!counts[f]) continue;
-    ub[f] = canBeInSet(counts, f) ? 1 : Math.max(half, single[f]);
+    ub[f] = inSearch || canBeInSet(counts, f) ? 1 : Math.max(half, single[f]);
     remaining0 += counts[f] * ub[f];
   }
   const cap = (setTiles) => (setTiles >= N ? 0 : Math.floor((N - setTiles) / 3));
-  let best = floor - jokers * JOKER_VALUE;
+  let best = floor - flatJ;
   let tiles = 0;
   for (let f = 0; f < FACES; f++) tiles += counts[f];
   const others = Array.from({ length: tiles + 2 }, () => []); // scratch per search depth
-  function rec(f, setTiles, nParts, acc, remaining, depth) {
+  // `remaining` bounds what is left: tiles' ub plus JOKER_VALUE per unused okey.
+  function rec(f, setTiles, nParts, acc, remaining, depth, jk) {
     while (f < FACES && counts[f] === 0) f++;
-    if (f === FACES) { if (acc > best) best = acc; return; }
+    if (f === FACES) { const v = acc + jk * JOKER_VALUE; if (v > best) best = v; return; }
     if (acc + remaining <= best + 1e-9) return;
     counts[f]--;
     const c = (f / 13) | 0, n = f - c * 13, base = c * 13;
@@ -98,7 +133,7 @@ export function evaluateSets(counts, jokers, ctx, floor = -Infinity) {
       counts[f + 1]--; counts[f + 2]--;
       let len = 3, k = n + 3, r = rem - ub[f + 1] - ub[f + 2];
       for (;;) {
-        if (nParts <= cap(setTiles + len)) rec(f, setTiles + len, nParts, acc + len, r, depth + 1);
+        if (nParts <= cap(setTiles + len)) rec(f, setTiles + len, nParts, acc + len, r, depth + 1, jk);
         if (k > 12 || counts[base + k] === 0) break;
         counts[base + k]--; r -= ub[base + k]; len++; k++;
       }
@@ -109,7 +144,7 @@ export function evaluateSets(counts, jokers, ctx, floor = -Infinity) {
       counts[base + 12]--; counts[base + 11]--;
       let len = 3, k = 10, r = rem - ub[base + 12] - ub[base + 11];
       for (;;) {
-        if (nParts <= cap(setTiles + len)) rec(f, setTiles + len, nParts, acc + len, r, depth + 1);
+        if (nParts <= cap(setTiles + len)) rec(f, setTiles + len, nParts, acc + len, r, depth + 1, jk);
         if (k < 1 || counts[base + k] === 0) break;
         counts[base + k]--; r -= ub[base + k]; len++; k--;
       }
@@ -121,40 +156,52 @@ export function evaluateSets(counts, jokers, ctx, floor = -Infinity) {
     if (o.length >= 2) {
       if (o.length === 3 && nParts <= cap(setTiles + 4)) {
         counts[o[0]]--; counts[o[1]]--; counts[o[2]]--;
-        rec(f, setTiles + 4, nParts, acc + 4, rem - ub[o[0]] - ub[o[1]] - ub[o[2]], depth + 1);
+        rec(f, setTiles + 4, nParts, acc + 4, rem - ub[o[0]] - ub[o[1]] - ub[o[2]], depth + 1, jk);
         counts[o[0]]++; counts[o[1]]++; counts[o[2]]++;
       }
       if (nParts <= cap(setTiles + 3)) {
         for (let i = 0; i < o.length; i++) for (let j = i + 1; j < o.length; j++) {
           counts[o[i]]--; counts[o[j]]--;
-          rec(f, setTiles + 3, nParts, acc + 3, rem - ub[o[i]] - ub[o[j]], depth + 1);
+          rec(f, setTiles + 3, nParts, acc + 3, rem - ub[o[i]] - ub[o[j]], depth + 1, jk);
           counts[o[i]]++; counts[o[j]]++;
         }
       }
     }
-    if (nParts + 1 <= cap(setTiles)) {
+    // Two-tile partials: kept as a partial, or (okey in the search) completed into a set by an okey.
+    const canPart = nParts + 1 <= cap(setTiles);
+    const canJoker = jk > 0 && nParts <= cap(setTiles + 3);
+    const partial = (g, w) => {
+      counts[g]--;
+      const r = rem - ub[g];
+      if (canJoker) rec(f, setTiles + 3, nParts, acc + 3, r - JOKER_VALUE, depth + 1, jk - 1);
+      if (canPart) rec(f, setTiles, nParts + 1, acc + w, r, depth + 1, jk);
+      counts[g]++;
+    };
+    if (canPart || canJoker) {
       if (n <= 11 && counts[f + 1] > 0) {
         let outs = 0;
         if (n >= 1) outs += live[f - 1];
         if (n + 2 <= 12) outs += live[f + 2];
         if (n + 1 === 12) outs += live[base];
-        counts[f + 1]--; rec(f, setTiles, nParts + 1, acc + val(outs), rem - ub[f + 1], depth + 1); counts[f + 1]++;
+        partial(f + 1, val(outs));
       }
-      if (n <= 10 && counts[f + 2] > 0) { counts[f + 2]--; rec(f, setTiles, nParts + 1, acc + val(live[f + 1]), rem - ub[f + 2], depth + 1); counts[f + 2]++; }
-      if (n === 0 && counts[base + 12] > 0) { counts[base + 12]--; rec(f, setTiles, nParts + 1, acc + val(live[base + 11]), rem - ub[base + 12], depth + 1); counts[base + 12]++; }
-      if (n === 0 && counts[base + 11] > 0) { counts[base + 11]--; rec(f, setTiles, nParts + 1, acc + val(live[base + 12]), rem - ub[base + 11], depth + 1); counts[base + 11]++; }
+      if (n <= 10 && counts[f + 2] > 0) partial(f + 2, val(live[f + 1]));
+      if (n === 0 && counts[base + 12] > 0) partial(base + 12, val(live[base + 11]));
+      if (n === 0 && counts[base + 11] > 0) partial(base + 11, val(live[base + 12]));
       for (let i = 0; i < o.length; i++) {
         const g = o[i], cg = (g / 13) | 0;
         let outs = 0;
         for (let k = 0; k < 4; k++) if (k !== c && k !== cg) outs += live[k * 13 + n];
-        counts[g]--; rec(f, setTiles, nParts + 1, acc + val(outs), rem - ub[g], depth + 1); counts[g]++;
+        partial(g, val(outs));
       }
     }
-    rec(f, setTiles, nParts, acc + single[f], rem, depth + 1);
+    // A loose tile with both okeys makes a set.
+    if (jk >= 2 && nParts <= cap(setTiles + 3)) rec(f, setTiles + 3, nParts, acc + 3, rem - 2 * JOKER_VALUE, depth + 1, jk - 2);
+    rec(f, setTiles, nParts, acc + single[f], rem, depth + 1, jk);
     counts[f]++;
   }
-  rec(0, 0, 0, 0, remaining0, 0);
-  return best + jokers * JOKER_VALUE;
+  rec(0, 0, 0, 0, remaining0, 0, jk0);
+  return best + flatJ;
 }
 
 export function evaluatePairs(counts, jokers, ctx) {

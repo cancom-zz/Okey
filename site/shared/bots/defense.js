@@ -5,12 +5,13 @@ import { faceColor, faceNum, runNeighbors, groupNeighbors } from './faces.js';
 
 export const DEFENSE_CAP = 0.5;       // defense never outweighs breaking a complete set (or a good partial)
 export const DEFENSE_BONUS_CAP = 0.2; // how much a known-safe tile is preferred
+export const LATE_BOOST = 1.6;        // `late`: urgency and cap multiplier once the pile is a quarter full
 
 // Defense: how much the next player (on our right, who may take our discard) seems to want face f,
 // judged only from remembered pickups, passes and throws of that player. Relative: an unremarkable tile
 // costs nothing, a tile next to what they picked up costs more, a tile they already passed on or threw is
 // slightly preferred. It grows as the pile shrinks and as they pick up more.
-export function dangerFn(view, mem, params, live, { pileStart = 48 } = {}) {
+export function dangerFn(view, mem, params, live, { pileStart = 48, late = false } = {}) {
   if (!(params.defense > 0)) return null;
   const okey = view.round.okey;
   const nextSeat = (view.you + 1) % 4;
@@ -18,7 +19,10 @@ export function dangerFn(view, mem, params, live, { pileStart = 48 } = {}) {
   const passed = mem.facesOf(mem.passed[nextSeat], okey);
   const throws = mem.facesOf(mem.throws[nextSeat], okey);
   const pileLeft = Math.max(0, Math.min(1, view.round.pileCount / pileStart));
-  const urgency = Math.min(1.3, 0.3 + 0.7 * (1 - pileLeft) + 0.1 * picks.length);
+  let urgency = Math.min(1.3, 0.3 + 0.7 * (1 - pileLeft) + 0.1 * picks.length);
+  // `late` (the strongest level): defend much harder in the last quarter of the pile.
+  const lateBoost = late && pileLeft <= 0.25 ? LATE_BOOST : 1;
+  urgency *= lateBoost;
   const runDist = (a, b) => {
     if (faceColor(a) !== faceColor(b)) return 99;
     const x = faceNum(a), y = faceNum(b);
@@ -44,7 +48,7 @@ export function dangerFn(view, mem, params, live, { pileStart = 48 } = {}) {
     if (passed.includes(f)) safe += 0.3;
     if (throws.includes(f)) safe += 0.2;
     const pen = params.defense * urgency * 0.6 * (want - safe);
-    const out = Math.max(-DEFENSE_BONUS_CAP, Math.min(DEFENSE_CAP, pen));
+    const out = Math.max(-DEFENSE_BONUS_CAP, Math.min(DEFENSE_CAP * lateBoost, pen));
     cache.set(f, out);
     return out;
   };
