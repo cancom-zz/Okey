@@ -155,6 +155,11 @@ Engine (`rules.js`):
   **always one trailing leftovers array** (possibly empty). Runs are in playing order with okeys in the gap they
   fill. 'pairs': as many pairs as possible (okeys pair with singles), then leftovers.
 
+`arrangeRack(ids, okey, mode: 'runs' | 'pairs') -> { sets, partials, singles }` is the rack sort behind
+"Seri diz" / "Çift diz": the most tiles in sets (runs and groups; ties go to the better leftovers), then
+near-sets one tile short (two of a number in different colours, neighbours or a one-gap in one colour, twins),
+chosen as a maximum-weight matching by how many faces would complete each, then the true singles together.
+
 ## Round flow
 
 1. Seats `0..3` in **turn order** (turn passes to `seat + 1 mod 4`, counter-clockwise at a real table: the

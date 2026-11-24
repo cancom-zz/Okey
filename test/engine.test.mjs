@@ -866,3 +866,51 @@ describe('simulation', () => {
     assert.deepEqual(play(), play());
   });
 });
+
+test('arrangeRack: sets, then near-sets side by side, then singles (Seri diz / Çift diz)', async () => {
+  const E = await import('../site/shared/okey/index.js');
+  const { arrangeRack, validSet, tileId, okeyFace, faceOf, seededRng, shuffle } = E;
+  const okey = okeyFace(tileId(0, 1)); // red 2 is the okey
+  // four 7s are a group; the 11s in two colours, 9-10, 3-4 and 13s sit together as near-sets
+  const hand = [tileId(0, 7), tileId(1, 7), tileId(2, 7), tileId(3, 7), tileId(0, 9), tileId(0, 10), tileId(2, 3),
+    tileId(2, 4), tileId(1, 11), tileId(3, 11), tileId(3, 1), tileId(1, 5), tileId(2, 13), tileId(0, 13)];
+  const r = arrangeRack(hand, okey);
+  assert.deepEqual(r.sets, [[tileId(0, 7), tileId(1, 7), tileId(2, 7), tileId(3, 7)]]);
+  assert.equal(r.partials.length, 4);
+  assert.deepEqual(r.singles.sort((a, b) => a - b), [tileId(1, 5), tileId(3, 1)].sort((a, b) => a - b));
+
+  // random hands: every tile once, sets valid, near-sets real, no two singles could still pair up
+  const near = (a, b, ok) => {
+    const fa = faceOf(a, ok), fb = faceOf(b, ok);
+    if (fa.wild || fb.wild) return false;
+    if (fa.color !== fb.color) return fa.num === fb.num;
+    const lo = Math.min(fa.num, fb.num), hi = Math.max(fa.num, fb.num);
+    return hi - lo <= 2 || (lo === 1 && hi >= 12);
+  };
+  const rng = seededRng('arrangeRack');
+  const all = Array.from({ length: 106 }, (_, i) => i);
+  for (let k = 0; k < 400; k++) {
+    const ind = shuffle(all.filter((i) => i < 104), rng)[0];
+    const ok = okeyFace(ind);
+    const h = shuffle(all.filter((i) => i !== ind), rng).slice(0, k % 3 === 0 ? 22 : 14);
+    for (const mode of ['runs', 'pairs']) {
+      const a = arrangeRack(h, ok, mode);
+      const flat = [...a.sets.flat(), ...a.partials.flat(), ...a.singles];
+      assert.deepEqual(flat.slice().sort((x, y) => x - y), h.slice().sort((x, y) => x - y));
+      if (mode === 'runs') for (const s of a.sets) assert.ok(validSet(s, ok), 'set is valid');
+      for (const p of a.partials) assert.equal(p.length, 2);
+    }
+    const a = arrangeRack(h, ok, 'runs');
+    {
+      const realSingles = a.singles.filter((id) => !faceOf(id, ok).wild);
+      {
+        for (let i = 0; i < realSingles.length; i++) for (let j = i + 1; j < realSingles.length; j++) {
+          // twins only count in pairs play, so the 'runs' check ignores them
+          const fa = faceOf(realSingles[i], ok), fb = faceOf(realSingles[j], ok);
+          if (fa.color === fb.color && fa.num === fb.num) continue;
+          assert.ok(!near(realSingles[i], realSingles[j], ok), 'two singles could form a near-set');
+        }
+      }
+    }
+  }
+});

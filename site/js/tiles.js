@@ -102,6 +102,15 @@ function sameFace2(a, b, okey) { const fa = faceOf(a, okey), fb = faceOf(b, okey
 
 // Sort helper for the "Seri diz" / "Çift diz" buttons. Engine arrange() when present, else a simple sort.
 export function arrange(ids, okey, mode) {
+  // Smart sort: sets, then near-sets (one tile short) side by side, then the true singles together.
+  if (engine && engine.arrangeRack && mode !== 'groups') {
+    try {
+      const { sets, partials, singles } = engine.arrangeRack(ids, okey, mode === 'pairs' ? 'pairs' : 'runs');
+      const loose = [...partials.map(p => p.slice()), ...(singles.length ? [singles.slice()] : [])];
+      loose.forEach(x => { x.loose = true; });
+      return [...sets.filter(x => x.length), ...loose];
+    } catch { /* fall through */ }
+  }
   if (engine && engine.arrange) {
     try {
       const g = engine.arrange(ids, okey, mode);

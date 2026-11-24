@@ -316,3 +316,98 @@ export function arrange(ids, okey, mode = 'runs') {
   const used = new Set(sets.flat());
   return [...sets, ids.filter((id) => !used.has(id)).sort(cmp)];
 }
+
+// ---------------------------------------------------------------------------------------------------
+// Rack sort for the "Seri diz" / "Çift diz" buttons: complete sets first, then the near-sets that are
+// one tile short (two of a number in different colours, neighbours or a one-gap in one colour, twins),
+// then the true singles together at the end. Owner (Nov 24): "you can of course have 3 or 4 of the same
+// tile (e.g. 7s)... auto sort intelligently with all outs next to each other".
+//
+// arrangeRack(ids, okey, mode = 'runs' | 'pairs') -> { sets, partials, singles }
+//   'runs'  : sets maximise tiles in runs AND groups; ties are broken by the better leftovers.
+//   'pairs' : identical pairs (an okey pairs with anything) first.
+// Near-set weights = how many different faces would complete it (each face has 2 copies):
+//   neighbours 5-6 -> 4 or 7 (2); 12-13 -> 11 or 1 (2); 1-2 -> 3 only (1); 13-1 -> 12 only (1)
+//   one gap 5-7 -> 6 (1); 12-1 -> 13 (1); a number in two colours -> the 2 missing colours (2)
+//   twins (same face) never make a run or group on their own, so they rank last (pairs play only).
+
+const LINK = { adj: 2, edge: 1, gap: 1, group: 2, twin: 0.5 };
+
+function linkScore(a, b, okey) {
+  const fa = faceOf(a, okey);
+  const fb = faceOf(b, okey);
+  if (fa.wild || fb.wild) return 0;
+  if (fa.color !== fb.color) return fa.num === fb.num ? LINK.group : 0;
+  if (fa.num === fb.num) return LINK.twin;
+  const lo = Math.min(fa.num, fb.num);
+  const hi = Math.max(fa.num, fb.num);
+  if (hi - lo === 1) return lo === 1 ? LINK.edge : LINK.adj; // 1-2 can only grow to 3
+  if (hi - lo === 2) return LINK.gap;
+  if (lo === 1 && hi === 13) return LINK.edge; // 13-1, grows only to 12-13-1
+  if (lo === 1 && hi === 12) return LINK.gap; // 12-_-1
+  return 0;
+}
+
+// Best set of disjoint two-tile near-sets (max total weight). Exact for up to 16 tiles, greedy above.
+function bestLinks(ids, okey) {
+  const n = ids.length;
+  const w = ids.map((a) => ids.map((b) => (a === b ? 0 : linkScore(a, b, okey))));
+  if (n > 16) {
+    const edges = [];
+    for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) if (w[i][j] > 0) edges.push([w[i][j], i, j]);
+    edges.sort((x, y) => y[0] - x[0] || x[1] - y[1] || x[2] - y[2]);
+    const used = new Set();
+    const links = [];
+    for (const [, i, j] of edges) if (!used.has(i) && !used.has(j)) { used.add(i); used.add(j); links.push([i, j]); }
+    return links;
+  }
+  const memo = new Map();
+  const best = (mask) => {
+    if (memo.has(mask)) return memo.get(mask);
+    let i = 0;
+    while (i < n && mask & (1 << i)) i++;
+    if (i === n) return { s: 0, links: [] };
+    let res = best(mask | (1 << i)); // tile i stays single
+    for (let j = i + 1; j < n; j++) {
+      if (mask & (1 << j) || w[i][j] <= 0) continue;
+      const r = best(mask | (1 << i) | (1 << j));
+      if (r.s + w[i][j] > res.s) res = { s: r.s + w[i][j], links: [[i, j], ...r.links] };
+    }
+    memo.set(mask, res);
+    return res;
+  };
+  return best(0).links;
+}
+
+function leftoverParts(left, okey) {
+  const cmp = byFace(okey);
+  const real = left.filter((id) => !faceOf(id, okey).wild);
+  const wild = left.filter((id) => faceOf(id, okey).wild);
+  const links = bestLinks(real, okey);
+  const inLink = new Set(links.flat());
+  const partials = links.map(([i, j]) => [real[i], real[j]].sort(cmp)).sort((a, b) => cmp(a[0], b[0]));
+  const singles = [...real.filter((_, i) => !inLink.has(i)).sort(cmp), ...wild];
+  const score = links.reduce((s, [i, j]) => s + linkScore(real[i], real[j], okey), 0);
+  return { partials, singles, score };
+}
+
+export function arrangeRack(ids, okey, mode = 'runs') {
+  ids = (Array.isArray(ids) ? ids : []).filter(isTile);
+  if (mode === 'pairs') {
+    const { pairs, leftovers } = pairUp(ids, okey);
+    const { partials, singles } = leftoverParts(leftovers, okey);
+    return { sets: pairs, partials, singles };
+  }
+  let best = null;
+  for (const m of ['runs', 'groups']) {
+    const g = arrange(ids, okey, m);
+    const left = g.pop();
+    const sets = g.filter((x) => x.length);
+    const parts = leftoverParts(left, okey);
+    const placed = sets.reduce((s, x) => s + x.length, 0);
+    if (!best || placed > best.placed || (placed === best.placed && parts.score > best.parts.score)) {
+      best = { placed, sets, parts };
+    }
+  }
+  return { sets: best.sets, partials: best.parts.partials, singles: best.parts.singles };
+}
