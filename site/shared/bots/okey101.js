@@ -14,6 +14,9 @@ import { dangerFn } from './defense.js';
 const PILE_START = 20;
 const BLUNDER_MARGIN = 1.0;
 const OPEN_GAIN_WEIGHT = 3;   // lookahead 3+: weight of the next draw's expected opening gain
+const OPEN_WAIT_REACH = 40;    // lookahead 4: count opening waits when the sets are within this of the opening
+const OPEN_WAIT_WEIGHT = 0.3;  // value per live tile that would open
+const BRIDGE_WEIGHT = 0.5;     // lookahead 4, opened: keep a tile one live tile away from the table
 
 /** How likely the round is to end soon (someone opened with few tiles left, or the pile is nearly gone). */
 function roundRisk(view) {
@@ -130,6 +133,44 @@ export function openingPotential(leftover, okey, live, turnsLeft, unknown) {
   return total;
 }
 
+/**
+ * Live copies of the one tile that would let `tile` join a table run next turn (the run ends two below or
+ * two above it, and the tile between is still out). 0 if none.
+ */
+export function bridgeOuts(tile, table, okey, live) {
+  const f = faceIndex(tile, okey);
+  if (f >= FACES) return 0;
+  const c = Math.floor(f / 13), n = (f % 13) + 1;
+  let best = 0;
+  for (const m of table) {
+    if (m.kind !== 'run' || m.color !== c) continue;
+    const end = m.start + m.tiles.length - 1;              // positions: 14 = the 1 after 13
+    if (end + 2 <= 14 && (end + 2 === 14 ? 1 : end + 2) === n && end + 1 <= 13) best = Math.max(best, live[c * 13 + end]);
+    if (m.start - 2 >= 1 && m.start - 2 === n) best = Math.max(best, live[c * 13 + m.start - 2]);
+  }
+  return best;
+}
+
+/** Live tiles that would let this hand open with sets on the next draw (keeping one tile to discard). */
+export function openingWaits(rest, okey, live, ace, need) {
+  const have = new Set(rest);
+  const near = new Uint8Array(FACES);
+  for (const t of rest) {
+    const f = faceIndex(t, okey);
+    if (f >= FACES) continue;
+    const c = Math.floor(f / 13), n = f % 13;
+    for (let d = -2; d <= 2; d++) near[c * 13 + ((n + d + 13) % 13)] = 1;
+    for (let k = 0; k < 4; k++) near[k * 13 + n] = 1;
+  }
+  let waits = 0;
+  for (let f = 0; f < FACES; f++) {
+    if (!live[f] || !near[f]) continue;
+    const id = tileOfFace(f, okey, have);
+    if (id !== null && bestSets([...rest, id], okey, { ...ace, keep: 1 }).value >= need) waits += live[f];
+  }
+  return waits;
+}
+
 export function plan101(view, mem, params, rng, st) {
   const r = view.round;
   if (view.phase !== 'playing' || !r || view.you == null || r.turn !== view.you || !Array.isArray(view.hand)) {
@@ -183,7 +224,7 @@ export function plan101(view, mem, params, rng, st) {
     }
     if (o.pairs) {
       // A pairs opener's hand counts double: experts prefer to wait for sets while that is still realistic.
-      if (params.lookahead >= 3 && !(params.lookahead >= 4 && !(globalThis.__botTune?.pairsWait ?? true)) && // TEMP hook
+      if (params.lookahead >= 3 &&
           !forced && r.pileCount > 10 && risk < 0.4 && o.setsValue >= req.value - 25) return null;
       return o.pairs;
     }
@@ -305,7 +346,7 @@ export function plan101(view, mem, params, rng, st) {
 
     const ctx = makeContext(live, {
       lookahead: Math.min(params.lookahead, 2), pairsBias: 0, handSize: Math.max(3, hand.length - 1),
-      ...(params.lookahead >= 4 && (globalThis.__botTune?.strong101 ?? true) ? strongOptions(live, r.pileCount) : {}), // TEMP hook
+      ...(params.lookahead >= 4 ? strongOptions(live, r.pileCount) : {}),
     });
     const danger = dangerFn(view, mem, params, live, { pileStart: PILE_START });
     const pairsMode = opened === 'pairs' ||
@@ -323,7 +364,7 @@ export function plan101(view, mem, params, rng, st) {
           const bs = bestSets(rest, okey, { ...ace, keep: 0 });
           const sv = bs.value;
           value += sv / 20;                                               // progress toward the opening
-          if (ctx.jokerSets && (globalThis.__botTune?.potential ?? true)) { // TEMP hook
+          if (ctx.jokerSets) {
             const inSets = new Set(bs.groups.flat());
             value += openingPotential(rest.filter((x) => !inSets.has(x)), okey, live, ctx.turnsLeft, ctx.unknown) / 20;
           }
@@ -340,13 +381,24 @@ export function plan101(view, mem, params, rng, st) {
         const x = scored[i];
         x.value += OPEN_GAIN_WEIGHT * openingGain(x.rest, okey, live, ace, x.sv) / 20;
       }
+      // Lookahead 4, one tile from opening: count the live tiles that would open (exact waits).
+      if (params.lookahead >= 4) {
+        for (let i = 0; i < scored.length && i < deep; i++) {
+          const x = scored[i];
+          if (x.sv < req.value - OPEN_WAIT_REACH) continue;
+          x.value += OPEN_WAIT_WEIGHT * openingWaits(x.rest, okey, live, ace, req.value);
+        }
+      }
     }
     const ranked = scored.map(({ tile: t, value }) => {
       const num = tileValue(t, okey);
       // Unopened: keep high tiles (they reach 101 sooner). Opened: shed high tiles as the round nears its end.
       const shed = opened ? valueWeight * num : 0.02 * (13 - num);
       const pen = (danger ? danger(faceIndex(t, okey)) : 0) + (islek(t) ? 50 : 0);
-      return { tile: t, value, score: value + shed - pen };
+      // Lookahead 4, opened: a tile one live tile away from fitting the table is worth keeping like a partial.
+      const bridge = opened && ctx.jokerSets
+        ? BRIDGE_WEIGHT * ctx.pv[Math.min(4, bridgeOuts(t, table, okey, live))] : 0;
+      return { tile: t, value, score: value + shed - pen - bridge };
     });
     ranked.sort((a, b) => b.score - a.score);
     let pick = ranked[0];

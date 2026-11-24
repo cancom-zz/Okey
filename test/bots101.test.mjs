@@ -6,54 +6,10 @@ import * as E from '../site/shared/okey101/index.js';
 import { isIslek } from '../site/shared/okey101/rules.js';
 import { createBot, LEVEL_IDS, LEVELS } from '../site/shared/bots/index.js';
 import { guard } from './botguard.mjs';
+import { playMatch101, seatsFor, botsFor, runTables, MAX_STEPS_101 } from './botsim.mjs';
 
-const MAX_STEPS = 40; // host.js MAX_BOT_STEPS_101
-
-const seatsFor = () => [0, 1, 2, 3].map((i) => ({ id: 'p' + i, name: 'P' + i, kind: 'bot', bot: { level: 'x' } }));
-const botsFor = (levels, seed) => levels.map((level, i) => createBot({ level, seed: `${seed}-${i}` }));
-
-/**
- * Plays a 101 match with the given bots (own events and views only). Every step goes through the engine's
- * act(), which throws on anything illegal. Counts what the tests look at.
- */
-function playMatch({ bots, seed, rounds = 9, wrap = (v) => v, onStep, beforeStep, onEvents }) {
-  const deal = E.seededRng('deal101-' + seed);
-  let match = E.newMatch({ seats: seatsFor(), settings: { rounds } });
-  const stats = { steps: 0, takes: 0, undo: 0, islek: [0, 0, 0, 0], maxTurnSteps: 0, delays: { first: [], later: [] } };
-  const send = (events) => {
-    onEvents?.(events);
-    for (let s = 0; s < 4; s++) for (const e of E.eventsFor(events, s)) bots[s].observe(structuredClone(e));
-  };
-  for (let k = 0; k < rounds; k++) {
-    let res = E.startRound(match, deal);
-    match = res.match;
-    send(res.events);
-    let turnSeat = -1;
-    let turnSteps = 0;
-    while (match.phase === 'playing') {
-      const seat = match.round.turn;
-      if (seat !== turnSeat) { turnSeat = seat; turnSteps = 0; }
-      turnSteps++;
-      stats.maxTurnSteps = Math.max(stats.maxTurnSteps, turnSteps);
-      if (turnSteps > MAX_STEPS) throw new Error('a bot turn did not end');
-      const view = E.viewFor(match, seat);
-      beforeStep?.({ seat, view });
-      const ms = bots[seat].delayMs(wrap(view));
-      const action = bots[seat].decide(wrap(view));
-      stats.delays[turnSteps === 1 ? 'first' : 'later'].push(ms);
-      onStep?.({ seat, view, action, ms, match });
-      if (action?.type === 'draw' && action.from === 'discard') stats.takes++;
-      if (action?.type === 'undoTake') stats.undo++;
-      res = E.act(match, seat, action); // throws GameError on an illegal action
-      for (const e of res.events) if (e.type === 'penalty') stats.islek[e.seat]++;
-      match = res.match;
-      send(res.events);
-      stats.steps++;
-    }
-    if (match.phase === 'matchEnd') break;
-  }
-  return { scores: match.scores, ...stats };
-}
+const MAX_STEPS = MAX_STEPS_101;
+const playMatch = playMatch101; // test/botsim.mjs: a bot-only 101 match through the engine's act()
 
 // ---------------------------------------------------------------------------------------------------------
 // No cheating, no shared state
@@ -244,27 +200,28 @@ test('sheds high tiles when an opponent is about to finish', () => {
 // ---------------------------------------------------------------------------------------------------------
 // Legality, thinking time, strength (one shared simulation)
 
-const LADDER_MATCHES = 24; // x 9 rounds, every level in every seat equally often
+const LADDER_MATCHES = 32; // x 9 rounds, every level in every seat equally often (worker threads)
 let ladder = null;
-function runLadder() {
+async function runLadder() {
   if (ladder) return ladder;
-  const total = {}, islek = {};
+  const jobs = Array.from({ length: LADDER_MATCHES }, (_, k) => ({
+    variant: '101', levels: LEVEL_IDS.map((_, i) => LEVEL_IDS[(i + k) % 4]), rounds: 9, seed: 'lad' + k,
+  }));
+  const total = {}, islek = {}, opened = {};
   const agg = { steps: 0, takes: 0, undo: 0, maxTurnSteps: 0, first: [], later: [], rounds: 0 };
-  for (const id of LEVEL_IDS) { total[id] = 0; islek[id] = 0; }
-  for (let k = 0; k < LADDER_MATCHES; k++) {
-    const order = LEVEL_IDS.map((_, i) => LEVEL_IDS[(i + k) % 4]);
-    const r = playMatch({ bots: botsFor(order, 'lad' + k), seed: 'lad' + k });
-    order.forEach((id, i) => { total[id] += r.scores[i]; islek[id] += r.islek[i]; });
-    agg.steps += r.steps; agg.takes += r.takes; agg.undo += r.undo; agg.rounds += 9;
+  for (const id of LEVEL_IDS) { total[id] = 0; islek[id] = 0; opened[id] = 0; }
+  for (const r of await runTables(jobs)) {
+    r.levels.forEach((id, i) => { total[id] += r.scores[i]; islek[id] += r.islek[i]; opened[id] += r.opened[i]; });
+    agg.steps += r.steps; agg.takes += r.takes; agg.undo += r.undo; agg.rounds += r.rounds;
     agg.maxTurnSteps = Math.max(agg.maxTurnSteps, r.maxTurnSteps);
     agg.first.push(...r.delays.first); agg.later.push(...r.delays.later);
   }
-  ladder = { total, islek, ...agg };
+  ladder = { total, islek, opened, ...agg };
   return ladder;
 }
 
-test('101 legality: thousands of bot steps accepted by the engine; takes are always used', () => {
-  const l = runLadder();
+test('101 legality: thousands of bot steps accepted by the engine; takes are always used', async () => {
+  const l = await runLadder();
   assert.ok(l.steps > 5000, `${l.steps} steps`);
   assert.ok(l.takes > 100, `${l.takes} takes`);
   assert.equal(l.undo, 0, 'a bot only takes what it can lay down, so it never has to give a take back');
@@ -272,19 +229,38 @@ test('101 legality: thousands of bot steps accepted by the engine; takes are alw
   assert.equal(l.islek.uzman, 0, 'the expert never throws an işlek tile');
 });
 
-test('101 thinking time: first step of a turn slower than the follow-up steps, all within 350..4000 ms', () => {
-  const { first, later } = runLadder();
+test('101 thinking time: first step of a turn slower than the follow-up steps, all within 350..4000 ms', async () => {
+  const { first, later } = await runLadder();
   const all = [...first, ...later];
   assert.ok(all.every((d) => Number.isInteger(d) && d >= 350 && d <= 4000));
   const mean = (a) => a.reduce((x, y) => x + y, 0) / a.length;
   assert.ok(mean(later) < mean(first), `${mean(later)} vs ${mean(first)}`);
 });
 
-test('101 strength ladder: lower total penalty is better; uzman clearly beats cirak', () => {
-  const { total, rounds, islek } = runLadder();
+// 288 rounds with ±202 swings: robust for uzman vs cirak/kalfa; vs usta only a guard (see DESIGN.md "Bots").
+test('101 strength ladder: lower total penalty is better; uzman clearly beats cirak and kalfa', async () => {
+  const { total, rounds, islek, opened } = await runLadder();
   const rows = LEVEL_IDS.map((id) =>
-    `${LEVELS[id].name.padEnd(6)} total ${String(total[id]).padStart(6)}  per round ${(total[id] / rounds).toFixed(1).padStart(5)}  işlek ${islek[id]}`);
+    `${LEVELS[id].name.padEnd(6)} total ${String(total[id]).padStart(6)}  per round ${(total[id] / rounds).toFixed(1).padStart(5)}  opened ${(100 * opened[id] / rounds).toFixed(0)}%  işlek ${islek[id]}`);
   console.log(`101 ladder over ${rounds} rounds:\n  ${rows.join('\n  ')}`);
   assert.ok(total.uzman <= 0.9 * total.cirak, 'uzman at least 10% lower than cirak');
-  assert.ok(total.uzman < total.kalfa);
+  assert.ok(total.uzman < total.kalfa, 'uzman below kalfa');
+  assert.ok(total.uzman / rounds <= total.usta / rounds + 5, 'uzman not clearly above usta');
+});
+
+test('CPU budget (101): uzman thinks under 60 ms per step on average and under 300 ms at worst', () => {
+  const cpu = () => { const u = process.cpuUsage(); return (u.user + u.system) / 1000; };
+  const times = [];
+  const bots = botsFor(['uzman', 'uzman', 'uzman', 'uzman'], 'cpu101').map((b) => ({
+    observe: (e) => b.observe(e),
+    delayMs(v) { const t = cpu(); const r = b.delayMs(v); this.pending = cpu() - t; return r; },
+    decide(v) { const t = cpu(); const r = b.decide(v); times.push(this.pending + cpu() - t); return r; },
+  }));
+  playMatch({ bots, seed: 'cpu101', rounds: 4 });
+  const warm = times.slice(20);
+  const avg = warm.reduce((a, b) => a + b, 0) / warm.length;
+  const max = Math.max(...warm);
+  console.log(`101 uzman decide: ${warm.length} steps, avg ${avg.toFixed(1)} ms, max ${max.toFixed(1)} ms (CPU)`);
+  assert.ok(avg < 60, `avg ${avg}`);
+  assert.ok(max < 300, `max ${max}`);
 });

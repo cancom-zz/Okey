@@ -391,7 +391,8 @@ and has no other input (no match state, pile, other hands or other bots). `test/
 through a Proxy view that throws on any other field and on any write.
 
 Files: `faces.js` (face indices 0..51, wild okeys apart), `evaluate.js` (hand value, outs, one-draw
-look-ahead), `memory.js` (imperfect event memory; understands classic `draw` and 101 `take`/`undoTake`) and
+look-ahead, the expert's options), `efficiency.js` (tiles missing and acceptance), `memory.js` (imperfect
+event memory; understands classic `draw` and 101 `take`/`undoTake`) and
 `defense.js` (what the next player seems to collect) are variant-neutral; `classic.js` is the classic turn
 policy, `okey101.js` the 101 one; `index.js` holds levels and `createBot`. **One brain plays both variants:**
 `decide`/`delayMs` pick the policy from `view.settings.variant`, with separate per-variant state (both in the
@@ -417,8 +418,8 @@ decay ≥ 0.005, lookahead 1..4, speed 0.25..3, the rest 0..1 (pairsBias 0..2). 
   `live[face]` = 2 − own copies − visible − remembered gone: the outs it believes are left.
 - `lookahead`: 1 = sets, partials and pairs only (a partial is a partial, no outs); 2 = partials valued by
   live outs and loose tiles by live neighbours (dead waits are dropped); 3 = plus one draw ahead: expected gain
-  of the next pile draw for the discards close to the best and for the take-or-draw choice; 4 = the same,
-  looking at twice as many discard candidates.
+  of the next pile draw for the discards close to the best and for the take-or-draw choice; 4 = the expert's
+  model (below).
 - `defense`: penalty for discarding what the next player (seat + 1, the only one who can take it) seems to
   collect, inferred from its remembered pickups (neighbours in a run, same number in a group); a small bonus
   for faces it passed on or threw; grows as the pile shrinks and as it picks up more; capped so it never
@@ -438,8 +439,32 @@ decay ≥ 0.005, lookahead 1..4, speed 0.25..3, the rest 0..1 (pairsBias 0..2). 
 Always: finishes when it can (highest-scoring option: pairs+okey > pairs = okey > normal), takes a discard
 that finishes or is an okey, never discards an okey otherwise, never throws back the tile it just took.
 
-Strength (test/bots.test.mjs, 160 rounds, one bot of each level per table, every level in every seat):
-round wins Çırak 9%, Kalfa 16%, Usta 34%, Uzman 37%. (800 rounds: 12 / 20 / 32 / 33%.)
+**The expert's model (`lookahead` 4, Uzman; lower levels keep the simpler ones so the ladder stays wide):**
+
+- Live outs exactly as the bot knows them: copies left = 2 − in hand − visible (discard tops, indicator,
+  101 table) − remembered gone (its imperfect memory).
+- Okeys are part of the set search (`evaluate.js` `jokerSets`): an okey is worth the set it completes, not a
+  flat value.
+- Partial sets are valued by their chance to complete within the turns left: 1 − (1 − outs/unknown)^T, with
+  T = pile/4 × 1.3 (own draws, plus discard pickups) and unknown = tiles it cannot see (`strongOptions`).
+- Classic discards by tile efficiency (`efficiency.js`): fewest tiles still missing first (sets route, or the
+  pairs route when it is at least 2 tiles closer: pairs waits are thin), then the most live tiles whose draw
+  brings the hand closer (acceptance, okeys included), then the value above; defense can outweigh a few tiles
+  of acceptance, never a missing tile. Taking the discard: only if it brings the hand a tile closer, or keeps
+  the distance with ≥ 6 more acceptance.
+- Defense much harder in the last quarter of the pile (`defense.js` `late`: ×1.6 urgency and cap).
+- 101 (below): opening waits, opening potential and table bridges.
+
+CPU (tested with `process.cpuUsage`, this machine): Uzman `delayMs` + `decide` ≈ 13–20 ms average, < 70 ms
+worst in classic; ≈ 5 ms average, ≈ 110–190 ms worst per 101 step. Budgets asserted: classic < 30 ms average
+and < 150 ms worst; 101 < 60 / < 300 ms. Lower levels are well under 5 ms.
+
+Classic strength (round wins; one bot of each level per table, every level in every seat), 3,200 rounds on
+fresh seeds: Çırak 10.9%, Kalfa 20.7%, Usta 30.2%, **Uzman 35.7%** (two 1,600-round halves: Uzman ahead of
+Usta by 7.6 and 3.3 points). In a duplicate head-to-head (same deals, seats swapped) Uzman takes about 52–53%
+of the Usta/Uzman wins. test/bots.test.mjs plays 240 rounds in 4 worker threads; that is enough for
+Çırak < Kalfa < Usta and Uzman far above Çırak and Kalfa, but Usta vs Uzman needs thousands of rounds, so
+the test only guards that Uzman is not clearly below Usta.
 
 **101 policy** (`okey101.js`, one action per `decide`; the host calls it again after each step). The view
 adds `round.{table, opened, required, taken}`, `seats[i].handCount` and the public 101 settings
@@ -463,15 +488,21 @@ adds `round.{table, opened, required, taken}`, `seats[i].handCount` and the publ
 - Discard: never an okey, never an işlek tile while a safe one exists (blunder × 0.1: a beginner's slip,
   101 penalty). Unopened: keep structure (the classic evaluation) and opening value (`bestSets` value), and
   throw low tiles first; with `lookahead` ≥ 3, also the expected opening value gained by the next draw over
-  live faces (top 4 discards, 6 at lookahead 4). In pairs mode (pairs opener, or ≥ 4 pairs and weak sets):
-  keep pairs and singles whose copy is live. Opened: shed high tiles more as the round nears its end (an
-  opponent opened with few tiles, or a short pile). Defense as classic (pile start 20).
+  live faces (top 4 discards, 6 at lookahead 4). Lookahead 4 also adds the opening potential (leftover
+  partial sets × their chance to complete × the value they would add) and, within 40 of the opening, the
+  exact opening waits (live tiles that would let it open next turn). In pairs mode (pairs opener, or ≥ 4
+  pairs and weak sets): keep pairs and singles whose copy is live. Opened: shed high tiles more as the round
+  nears its end (an opponent opened with few tiles, or a short pile); lookahead 4 keeps a tile one live tile
+  away from a table run end (a bridge) like a partial. Defense as classic (pile start 20).
 - Finish: discarding the last tile (an okey last doubles).
 
-101 strength (penalty points, lower is better; one bot of each level per table, every level in every seat):
-1,440 rounds: Çırak 67.4, Kalfa 58.6, Usta 54.8, Uzman 54.8 per round; the engine's auto-play alone ≈ 115.
-test/bots101.test.mjs (216 rounds): Çırak 65.6, Kalfa 70.3, Usta 60.6, Uzman 30.2 (one round's ±202 swings
-make small samples noisy; the test asserts Uzman ≥ 10% below Çırak and below Kalfa).
+101 strength (penalty points per round, lower is better; one bot of each level per table, every level in
+every seat), 7,200 rounds: Çırak 67.1, Kalfa 57.9, Usta 52.2, **Uzman 50.8**; the engine's auto-play alone
+≈ 115. In a duplicate head-to-head Uzman is 3–9 points per round below Usta. Most of a round's penalty is
+the 202 for not opening (about a quarter of rounds at every level), and the levels open at similar rates
+(Uzman ≈ 76%, Usta ≈ 74%), so 101 separates less than classic. test/bots101.test.mjs (288 rounds, worker
+threads; ±202 swings make small samples noisy) asserts Uzman ≥ 10% below Çırak and below Kalfa, and guards
+that Uzman is not clearly above Usta.
 
 ## 101 Okey (`site/shared/okey101/`)
 

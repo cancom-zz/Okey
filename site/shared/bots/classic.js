@@ -7,8 +7,9 @@
 import { finishOptions, findFinish } from '../okey/rules.js';
 import { otherCopy } from '../okey/tiles.js';
 import { FACES, WILD, faceIndex, handVector, faceColor, faceNum, okeyFaceIndex } from './faces.js';
-import { makeContext, evaluate, expectedDrawGain } from './evaluate.js';
+import { makeContext, evaluate, expectedDrawGain, strongOptions } from './evaluate.js';
 import { dangerFn, DEFENSE_CAP } from './defense.js';
+import { keptContext, efficiencyOf, acceptance } from './efficiency.js';
 
 const BLUNDER_MARGIN = 1.0;   // a blunder only picks a move at most this much worse (stays plausible:
                               // breaks a partial or keeps a weaker tile, never breaks a complete set)
@@ -16,10 +17,13 @@ const DEEP_CANDIDATES = 4;    // lookahead 3: discards that get the one-draw loo
 const DEEP_WINDOW = 0.5;      // lookahead 3: only discards within this much of the best get the look-ahead
 const IRRELEVANT = BLUNDER_MARGIN + DEFENSE_CAP + 0.5; // DEFENSE_CAP from defense.js
 
-const TURN_FACTOR = 1.3;
-const TENPAI_VALUE = 12.5;    // lookahead 4: from here on, count exact waits
-const WAIT_CANDIDATES = 4;
-const WAIT_WEIGHT = 0.12;     // value per live winning tile      // own draws per pile/4 turns, counting tiles taken from the discard
+const TURN_FACTOR = 1.3;      // lookahead 4: own draws per pile/4, counting tiles taken from the discard
+const DEF_WEIGHT = 10;        // lookahead 4 discard score: one missing tile ...
+const ACC_WEIGHT = 0.2;       // ... outweighs any acceptance (live tiles that help) ...
+const VALUE_WEIGHT = 0.3;     // ... and the hand value only breaks ties
+const DANGER_WEIGHT = 2;      // defense can override a few tiles of acceptance, never a missing tile
+const ACC_CANDIDATES = 4;    // lookahead 4: discards whose acceptance is counted
+const ACC_TAKE_MARGIN = 6;    // lookahead 4: take a discard that keeps the deficiency only if it adds this many
 const finishPoints = (o) => (o.kind === 'pairs' ? 4 : 2) * (o.okeyFinish ? 2 : 1);
 
 /** Value of a tile list for this bot (higher = closer to finishing). */
@@ -55,21 +59,28 @@ function rankDiscards(hand, view, ctx, danger, exclude, deep = ctx.lookahead >= 
     if (value > top) top = value;
     out.push({ tile: id, rest, value, score: value });
   }
-  if (deep) {
-    // Look one draw ahead for the discards that are close to the best (the others stay where they are).
-    out.sort((a, b) => b.value - a.value);
-    const wide = ctx.lookahead >= 4;
-    const maxDeep = wide ? 2 * DEEP_CANDIDATES : DEEP_CANDIDATES, window = wide ? 2 * DEEP_WINDOW : DEEP_WINDOW;
-    for (let i = 0; i < out.length && i < maxDeep; i++) {
-      if (out[i].value < top - window) break;
-      out[i].value += expectedDrawGain(out[i].rest, okey, ctx) * (wide ? (globalThis.__botTune?.eWeight ?? 1) : 1); // TEMP hook
+  if (ctx.kctx) {
+    // Lookahead 4: tile efficiency. Fewest tiles missing first, then most live tiles that help, then value.
+    let minDef = Infinity;
+    for (const x of out) {
+      Object.assign(x, efficiencyOf(x.rest, okey, ctx.kctx, { atMost: minDef }));
+      if (x.def < minDef) minDef = x.def;
     }
-    // Lookahead 4, one tile from finishing: count the live tiles that would really finish (exact waits).
-    if (wide && (globalThis.__botTune?.waits ?? true) && out[0].value >= TENPAI_VALUE) { // TEMP hook
-      for (let i = 0; i < out.length && i < WAIT_CANDIDATES; i++) {
-        if (out[i].value < out[0].value - window) break;
-        out[i].value += WAIT_WEIGHT * liveWaits(out[i].rest, okey, ctx);
-      }
+    // Acceptance for the best few of the closest hands (by value); the rest keep 0.
+    const close = out.filter((x) => x.def === minDef).sort((a, b) => b.value - a.value).slice(0, ACC_CANDIDATES);
+    for (const x of out) x.acc = 0;
+    for (const x of close) x.acc = acceptance(x.counts, x.jokers, ctx.kctx, x.def, { liveOkeys: ctx.liveOkeys });
+    for (const x of out) x.value = -DEF_WEIGHT * x.def + ACC_WEIGHT * x.acc + VALUE_WEIGHT * x.value;
+    for (const x of out) x.score = x.value - DANGER_WEIGHT * (danger ? danger(faceIndex(x.tile, okey)) : 0);
+    out.sort((a, b) => b.score - a.score);
+    return out;
+  }
+  if (deep) {
+    // Lookahead 3: look one draw ahead for the discards that are close to the best (the others stay put).
+    out.sort((a, b) => b.value - a.value);
+    for (let i = 0; i < out.length && i < DEEP_CANDIDATES; i++) {
+      if (out[i].value < top - DEEP_WINDOW) break;
+      out[i].value += expectedDrawGain(out[i].rest, okey, ctx);
     }
   }
   for (const x of out) x.score = x.value - (danger ? danger(faceIndex(x.tile, okey)) : 0);
@@ -77,46 +88,10 @@ function rankDiscards(hand, view, ctx, danger, exclude, deep = ctx.lookahead >= 
   return out;
 }
 
-/**
- * How many live tiles would finish this 14-tile hand on the next draw (the okey's two copies included).
- * The hand evaluation pre-filters faces (a finish scores at least 14) before the engine confirms.
- */
-export function liveWaits(rest14, okey, ctx) {
-  const { counts, jokers } = handVector(rest14, okey);
-  const have = new Set(rest14);
-  let waits = 0;
-  const tryTile = (id, copies, addCount) => {
-    if (id == null || !copies) return;
-    if (addCount) addCount(1);
-    const v = evaluate(counts, jokers + (addCount ? 0 : 1), ctx, 13.98).value;
-    if (addCount) addCount(-1);
-    if (v >= 13.99 && finishOptions([...rest14, id], okey).length) waits += copies;
-  };
-  for (let f = 0; f < FACES; f++) {
-    const n = ctx.live[f];
-    if (!n) continue;
-    tryTile(tileForFace(f, okey, rest14), n, (d) => { counts[f] += d; });
-  }
-  // The wild okeys: copies not in hand and not seen (the indicator never shows an okey face).
-  const okeyIds = [0, 1].map((cp) => okey.color * 26 + cp * 13 + okey.num - 1).filter((id) => !have.has(id));
-  if (okeyIds.length && !ctx.seenOkeys) tryTile(okeyIds[0], okeyIds.length, null);
-  return waits;
-}
-
 /** Evaluation options by level: the strongest level (lookahead 4) gets the fuller model. */
 export function contextOptions(params, live, pileCount) {
   const o = { lookahead: params.lookahead, pairsBias: params.pairsBias };
-  if (params.lookahead >= 4) {
-    const TT = globalThis.__botTune || {}; // TEMP tuning hook
-    let unknown = 0;
-    for (let f = 0; f < FACES; f++) unknown += live[f];
-    o.jokerSets = TT.jokerSets ?? true;
-    if (TT.prob ?? true) {
-      o.unknown = Math.max(1, unknown);
-      o.turnsLeft = Math.max(1, pileCount / 4) * (TT.turnFactor ?? TURN_FACTOR);
-    }
-  }
-  return o;
+  return params.lookahead >= 4 ? { ...o, ...strongOptions(live, pileCount, TURN_FACTOR) } : o;
 }
 
 /** A tile id with face f that is not in `hand` (for "what if I drew f" checks). */
@@ -173,7 +148,12 @@ export function plan(view, mem, params, rng, st) {
 
   const live = mem.liveTable(hand, view);
   const ctx = makeContext(live, contextOptions(params, live, r.pileCount));
-  const danger = dangerFn(view, mem, params, live, { pileStart: 48, late: params.lookahead >= 4 && (globalThis.__botTune?.late ?? true) } /* TEMP hook */);
+  if (params.lookahead >= 4) {
+    ctx.kctx = keptContext(live);
+    const seen = [...hand, ...view.seats.map((x) => x.discard.top)].filter((t) => t != null && faceIndex(t, okey) === WILD);
+    ctx.liveOkeys = Math.max(0, 2 - seen.length);
+  }
+  const danger = dangerFn(view, mem, params, live, { pileStart: 48, late: params.lookahead >= 4 });
 
   if (r.stage === 'draw') {
     const left = (you + 3) % 4;
@@ -185,6 +165,16 @@ export function plan(view, mem, params, rng, st) {
     const with15 = [...hand, top];
     if (faceIndex(top, okey) === WILD) return { ...take, hardness: 0 };
     if (finishOptions(with15, okey).some((o) => o.discard !== top)) return { ...take, hardness: 0 };
+    if (ctx.kctx) {
+      // Lookahead 4: take it when it brings the hand a tile closer, or keeps the distance with much wider waits.
+      const cur = efficiencyOf(hand, okey, ctx.kctx);
+      const curAcc = acceptance(cur.counts, cur.jokers, ctx.kctx, cur.def, { liveOkeys: ctx.liveOkeys });
+      const best = rankDiscards(with15, view, ctx, null, top, false)[0];
+      const better = best.def < cur.def || (best.def === cur.def && best.acc >= curAcc + ACC_TAKE_MARGIN);
+      const hardness = best.def === cur.def ? 0.6 : 0.1;
+      if (better && !rng.chance(params.blunder * 0.5)) { st.took = top; return { ...take, hardness }; }
+      return { ...pile, hardness };
+    }
     const now = valueOf(hand, okey, ctx);
     const ranked = rankDiscards(with15, view, ctx, null, top, false);
     let gain = ranked[0].value - now;

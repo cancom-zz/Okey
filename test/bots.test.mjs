@@ -8,55 +8,12 @@ import {
 import { createBot, LEVELS, LEVEL_IDS, resolveParams, MAX_MEMORY, MIN_DECAY } from '../site/shared/bots/index.js';
 import { Memory } from '../site/shared/bots/memory.js';
 import { guard } from './botguard.mjs';
+import { playRounds, seatsFor, botsFor, runTables } from './botsim.mjs';
 
 // ---------------------------------------------------------------------------------------------------------
-// Harness
+// Harness (test/botsim.mjs): playRounds plays bot-only classic rounds through the engine's act().
 
-function seatsFor(levels) {
-  return levels.map((level, i) => ({ id: 'p' + i, name: 'P' + i, kind: 'bot', bot: { level } }));
-}
-
-/**
- * Plays `rounds` rounds with the given bots (only their own events and views). Every action goes through
- * the engine's act(), which throws on anything illegal. Returns wins and score changes per seat.
- */
-function playRounds({ bots, rounds, seed, wrap = (v) => v, onAction, beforeAction, onEvents }) {
-  const deal = seededRng('deal-' + seed);
-  let match = newMatch({ seats: seatsFor(bots.map(() => 'x')), settings: { startPoints: 1e9 } });
-  const wins = [0, 0, 0, 0];
-  const points = [0, 0, 0, 0];
-  let actions = 0;
-  let empty = 0;
-  const send = (events) => {
-    onEvents?.(events);
-    for (let s = 0; s < 4; s++) for (const e of eventsFor(events, s)) bots[s].observe(structuredClone(e));
-  };
-  for (let k = 0; k < rounds; k++) {
-    let res = startRound(match, deal);
-    match = res.match;
-    send(res.events);
-    while (match.phase === 'playing') {
-      const seat = match.round.turn;
-      const view = viewFor(match, seat);
-      beforeAction?.({ seat, view, match });
-      const ms = bots[seat].delayMs(wrap(view));
-      const action = bots[seat].decide(wrap(view));
-      onAction?.({ seat, view, action, ms, match });
-      res = act(match, seat, action); // throws GameError on an illegal action
-      match = res.match;
-      send(res.events);
-      actions++;
-      if (actions > 1e6) throw new Error('runaway');
-    }
-    const r = match.result;
-    if (r.winner === null) empty++;
-    else wins[r.winner]++;
-    for (let s = 0; s < 4; s++) points[s] += r.deltas[s];
-  }
-  return { wins, points, actions, empty };
-}
-
-const ladderBots = (levels, seed) => levels.map((level, i) => createBot({ level, seed: `${seed}-${i}` }));
+const ladderBots = botsFor;
 
 // ---------------------------------------------------------------------------------------------------------
 // API and levels
@@ -352,37 +309,35 @@ test('decide returns null when it is not the bot\'s move', () => {
 // ---------------------------------------------------------------------------------------------------------
 // Legality, thinking time, strength
 
-// One shared simulation: 4 tables x 40 rounds, each level in every seat once.
-const LADDER_ROUNDS = 40;
+// One shared simulation, in parallel worker threads: 4 tables x LADDER_ROUNDS, each level in every seat once.
+const LADDER_ROUNDS = 60;
 let ladder = null;
-function runLadder() {
+async function runLadder() {
   if (ladder) return ladder;
+  const jobs = [0, 1, 2, 3].map((k) => ({
+    variant: 'classic', levels: LEVEL_IDS.map((_, i) => LEVEL_IDS[(i + k) % 4]), rounds: LADDER_ROUNDS, seed: 'ladder' + k,
+  }));
   const wins = {}, points = {}, delays = {};
   let actions = 0, rounds = 0, empty = 0;
   for (const id of LEVEL_IDS) { wins[id] = 0; points[id] = 0; delays[id] = []; }
-  for (let k = 0; k < 4; k++) {
-    const order = LEVEL_IDS.map((_, i) => LEVEL_IDS[(i + k) % 4]);
-    const res = playRounds({
-      bots: ladderBots(order, 'ladder' + k), rounds: LADDER_ROUNDS, seed: 'ladder' + k,
-      onAction: ({ seat, ms }) => delays[order[seat]].push(ms),
-    });
-    order.forEach((id, i) => { wins[id] += res.wins[i]; points[id] += res.points[i]; });
+  for (const res of await runTables(jobs)) {
+    res.levels.forEach((id, i) => { wins[id] += res.wins[i]; points[id] += res.points[i]; delays[id].push(...res.delays[i]); });
     actions += res.actions;
-    rounds += LADDER_ROUNDS;
+    rounds += res.rounds;
     empty += res.empty;
   }
   ladder = { wins, points, delays, actions, rounds, empty };
   return ladder;
 }
 
-test('legality: thousands of bot actions, all accepted by the engine', () => {
-  const { actions, rounds } = runLadder();
+test('legality: thousands of bot actions, all accepted by the engine', async () => {
+  const { actions, rounds } = await runLadder();
   assert.ok(actions > 5000, `${actions} actions`);
   assert.equal(rounds, 4 * LADDER_ROUNDS);
 });
 
-test('thinking time: human-like, 350..4000 ms, beginners slower than experts', () => {
-  const { delays } = runLadder();
+test('thinking time: human-like, 350..4000 ms, beginners slower than experts', async () => {
+  const { delays } = await runLadder();
   const all = Object.values(delays).flat();
   assert.ok(all.every((d) => Number.isInteger(d) && d >= 350 && d <= 4000));
   const sorted = all.slice().sort((a, b) => a - b);
@@ -393,14 +348,39 @@ test('thinking time: human-like, 350..4000 ms, beginners slower than experts', (
   assert.ok(new Set(all).size > 100, 'jittered');
 });
 
-test('strength ladder: uzman beats cirak decisively; usta > kalfa > cirak in round wins', () => {
-  const { wins, points, rounds, empty } = runLadder();
+// What 240 rounds can show robustly. Usta vs uzman is a few points of round wins, which needs thousands of
+// rounds (DESIGN.md "Bots" has the 3,200-round numbers): here only a guard that uzman is not clearly worse.
+test('strength ladder: cirak < kalfa < usta; uzman far above cirak and kalfa, not below usta', async () => {
+  const { wins, points, rounds, empty } = await runLadder();
   const share = (id) => wins[id] / rounds;
   const table = LEVEL_IDS.map((id) =>
     `${LEVELS[id].name.padEnd(6)} wins ${String(wins[id]).padStart(3)} (${(100 * share(id)).toFixed(1)}%)  points ${points[id]}`);
   console.log(`ladder over ${rounds} rounds (${empty} with an empty pile):\n  ${table.join('\n  ')}`);
   assert.ok(wins.uzman >= 2 * wins.cirak, 'uzman wins at least twice as often as cirak');
   assert.ok(share('uzman') - share('cirak') >= 0.12);
+  assert.ok(share('uzman') - share('kalfa') >= 0.08, 'uzman well above kalfa');
   assert.ok(wins.usta > wins.kalfa && wins.kalfa > wins.cirak);
+  assert.ok(share('uzman') >= share('usta') - 0.08, 'uzman not clearly below usta');
   assert.ok(points.uzman > points.cirak);
+});
+
+/** CPU time (ms) this process spent in each delayMs + decide of the wrapped bots (not affected by other processes). */
+function timed(bots, sink) {
+  const cpu = () => { const u = process.cpuUsage(); return (u.user + u.system) / 1000; };
+  return bots.map((b) => ({
+    observe: (e) => b.observe(e),
+    delayMs(v) { const t = cpu(); const r = b.delayMs(v); sink.pending = cpu() - t; return r; },
+    decide(v) { const t = cpu(); const r = b.decide(v); sink.push(sink.pending + cpu() - t); return r; },
+  }));
+}
+
+test('CPU budget (classic): uzman thinks under 30 ms on average and under 150 ms at worst', () => {
+  const times = [];
+  playRounds({ bots: timed(botsFor(['uzman', 'uzman', 'uzman', 'uzman'], 'cpu'), times), rounds: 4, seed: 'cpu' });
+  const warm = times.slice(20); // skip JIT warm-up
+  const avg = warm.reduce((a, b) => a + b, 0) / warm.length;
+  const max = Math.max(...warm);
+  console.log(`classic uzman decide: ${warm.length} decisions, avg ${avg.toFixed(1)} ms, max ${max.toFixed(1)} ms (CPU)`);
+  assert.ok(avg < 30, `avg ${avg}`);
+  assert.ok(max < 150, `max ${max}`);
 });

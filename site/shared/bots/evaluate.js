@@ -43,8 +43,7 @@ export function makeContext(live, { lookahead = 2, pairsBias = 1, handSize = 14,
   let pv = lookahead >= 2 ? PV_OUTS : PV_FLAT;
   if (turnsLeft > 0 && unknown > 0) {
     pv = new Float64Array(5);
-    const TT = globalThis.__botTune || {}; // TEMP
-    for (let o = 0; o <= 4; o++) pv[o] = (TT.probBase ?? PROB_BASE) + (TT.probSpan ?? PROB_SPAN) * (1 - Math.pow(Math.max(0, 1 - o / unknown), turnsLeft));
+    for (let o = 0; o <= 4; o++) pv[o] = PROB_BASE + PROB_SPAN * (1 - Math.pow(Math.max(0, 1 - o / unknown), turnsLeft));
   }
   return {
     live, lookahead, single, handSize, jokerSets, turnsLeft, unknown,
@@ -92,6 +91,13 @@ function canBeInSet(counts, f) {
   return false;
 }
 
+/** Is there another tile that could make a two-tile partial set with face f (run within 2, or a group)? */
+function hasPartner(counts, f) {
+  for (const { f: g } of runNeighbors(f)) if (counts[g] > 0) return true;
+  for (const g of groupNeighbors(f)) if (counts[g] > 0) return true;
+  return false;
+}
+
 /**
  * Sets route value. `floor` (optional): the caller only cares about values above it; the search prunes
  * against it and returns at least `floor` (exact whenever the true value is higher).
@@ -101,19 +107,21 @@ function canBeInSet(counts, f) {
  */
 export function evaluateSets(counts, jokers, ctx, floor = -Infinity) {
   const live = ctx.live, single = ctx.single, N = ctx.handSize, pv = ctx.pv;
+  const JV = ctx.jv ?? JOKER_VALUE;
   const val = (outs) => pv[outs > 4 ? 4 : outs];
   const inSearch = ctx.jokerSets && jokers > 0;
   const jk0 = inSearch ? jokers : 0;
-  const flatJ = inSearch ? 0 : jokers * JOKER_VALUE;
+  const flatJ = inSearch ? 0 : jokers * JV;
   // Upper bound per tile: 1 if it could sit in a complete set with the tiles present (always, with okeys in
   // the search), else at most half of the best partial (or its loose value). Tiles only get used up, so
-  // this stays a valid bound. Each okey in the search adds at most JOKER_VALUE.
+  // this stays a valid bound. Each okey in the search adds at most JV.
   const ub = new Float64Array(FACES);
   const half = Math.max(pv[4], pv[0]) / 2;
-  let remaining0 = jk0 * JOKER_VALUE;
+  let remaining0 = jk0 * JV;
   for (let f = 0; f < FACES; f++) {
     if (!counts[f]) continue;
-    ub[f] = inSearch || canBeInSet(counts, f) ? 1 : Math.max(half, single[f]);
+    if (ctx.strictUB) ub[f] = jk0 >= 2 || canBeInSet(counts, f) || hasPartner(counts, f) ? 1 : 0; // kept-tiles mode
+    else ub[f] = inSearch || canBeInSet(counts, f) ? 1 : Math.max(half, single[f]);
     remaining0 += counts[f] * ub[f];
   }
   const cap = (setTiles) => (setTiles >= N ? 0 : Math.floor((N - setTiles) / 3));
@@ -121,10 +129,10 @@ export function evaluateSets(counts, jokers, ctx, floor = -Infinity) {
   let tiles = 0;
   for (let f = 0; f < FACES; f++) tiles += counts[f];
   const others = Array.from({ length: tiles + 2 }, () => []); // scratch per search depth
-  // `remaining` bounds what is left: tiles' ub plus JOKER_VALUE per unused okey.
+  // `remaining` bounds what is left: tiles' ub plus JV per unused okey.
   function rec(f, setTiles, nParts, acc, remaining, depth, jk) {
     while (f < FACES && counts[f] === 0) f++;
-    if (f === FACES) { const v = acc + jk * JOKER_VALUE; if (v > best) best = v; return; }
+    if (f === FACES) { const v = acc + jk * JV; if (v > best) best = v; return; }
     if (acc + remaining <= best + 1e-9) return;
     counts[f]--;
     const c = (f / 13) | 0, n = f - c * 13, base = c * 13;
@@ -173,7 +181,7 @@ export function evaluateSets(counts, jokers, ctx, floor = -Infinity) {
     const partial = (g, w) => {
       counts[g]--;
       const r = rem - ub[g];
-      if (canJoker) rec(f, setTiles + 3, nParts, acc + 3, r - JOKER_VALUE, depth + 1, jk - 1);
+      if (canJoker) rec(f, setTiles + 3, nParts, acc + 3, r - JV, depth + 1, jk - 1);
       if (canPart) rec(f, setTiles, nParts + 1, acc + w, r, depth + 1, jk);
       counts[g]++;
     };
@@ -196,7 +204,7 @@ export function evaluateSets(counts, jokers, ctx, floor = -Infinity) {
       }
     }
     // A loose tile with both okeys makes a set.
-    if (jk >= 2 && nParts <= cap(setTiles + 3)) rec(f, setTiles + 3, nParts, acc + 3, rem - 2 * JOKER_VALUE, depth + 1, jk - 2);
+    if (jk >= 2 && nParts <= cap(setTiles + 3)) rec(f, setTiles + 3, nParts, acc + 3, rem - 2 * JV, depth + 1, jk - 2);
     rec(f, setTiles, nParts, acc + single[f], rem, depth + 1, jk);
     counts[f]++;
   }
