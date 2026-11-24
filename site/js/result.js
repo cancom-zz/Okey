@@ -33,7 +33,7 @@ export function deltasHTML(view) {
 export function handGroupsHTML(view) {
   const r = view.result; if (!r || !r.groups) return '';
   const okey = view.round && view.round.okey;
-  return r.groups.map(g => `<div class="rg">${g.map(id => tileHTML(id, okey, 'rv')).join('')}</div>`).join('');
+  return r.groups.map(g => `<div class="rg">${g.map(id => tileHTML(id, okey, 'rv', `data-id="${id}"`)).join('')}</div>`).join('');
 }
 
 export function podiumHTML(view, lowWins = false) {

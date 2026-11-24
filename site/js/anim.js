@@ -111,3 +111,61 @@ export function shake(el) {
   if (!el || reduced()) return;
   el.animate([{ transform: 'translateX(0)' }, { transform: 'translateX(-6px)' }, { transform: 'translateX(6px)' }, { transform: 'translateX(-3px)' }, { transform: 'none' }], { duration: 300 });
 }
+
+// ---- geometry-based flights (opponents, the pile, discards, the deal, the finish) ----
+// A geometry is { cx, cy, w, h, rot }: the centre of an element, its UNROTATED size and its rotation in degrees.
+// Every flight ends exactly on its target geometry and calls onLand in the same task that removes the flying
+// element, so the real element takes its place without a frame of gap, jump or pop.
+export function geomOf(el, w, h, rot = 0) {
+  if (!el) return null;
+  const r = el.getBoundingClientRect();
+  return { cx: r.left + r.width / 2, cy: r.top + r.height / 2, w: w ?? r.width, h: h ?? r.height, rot };
+}
+export const sleep = ms => (ms > 0 ? new Promise(r => setTimeout(r, ms)) : Promise.resolve());
+const FLIP_AT = { early: [0.06, 0.46], mid: [0.25, 0.75], late: [0.52, 0.94] };
+
+//   faceFrom / faceTo: true = face up (needs id). flipAt: 'early' | 'mid' | 'late'. lift: arc height factor.
+export async function fly({ id = null, okey = null, from, to, faceFrom = false, faceTo = false, flipAt = 'mid', ms = 340, arc = 0.2, delay = 0, cls = '', onLaunch, onLand }) {
+  const d = dur(ms);
+  if (delay) await sleep(dur(delay));
+  onLaunch && onLaunch();
+  if (!d || !from || !to) { onLand && onLand(); return; }
+  const el = document.createElement('div');
+  el.className = 'fly ' + cls;
+  el.style.cssText = `left:${to.cx - to.w / 2}px;top:${to.cy - to.h / 2}px;width:${to.w}px;height:${to.h}px;--tw:${to.w}px`;
+  const shows = id != null && id >= 0 && (faceFrom || faceTo);
+  el.innerHTML = `<div class="flipper"><div class="${shows ? tileClass(id, okey) : 'tile back'} front">${shows ? tileInner(id) : ''}</div><div class="tile back rear"></div></div>`;
+  layer().appendChild(el);
+  const dx = from.cx - to.cx, dy = from.cy - to.cy, s0 = from.w / to.w;
+  const lift = Math.min(90, Math.hypot(dx, dy) * arc);
+  // turn the short way round
+  let r0 = from.rot || 0, r1 = to.rot || 0;
+  while (r0 - r1 > 180) r0 -= 360;
+  while (r1 - r0 > 180) r0 += 360;
+  const main = el.animate([
+    { transform: `translate(${dx}px,${dy}px) rotate(${r0}deg) scale(${s0})`, offset: 0 },
+    { transform: `translate(${dx * 0.5}px,${dy * 0.5 - lift}px) rotate(${(r0 + r1) / 2}deg) scale(${((s0 + 1) / 2) * 1.07})`, offset: 0.5 },
+    { transform: `translate(0px,0px) rotate(${r1}deg) scale(1)`, offset: 1 },
+  ], { duration: d, easing: 'cubic-bezier(.33,0,.2,1)', fill: 'both' });
+  const flipper = el.firstElementChild;
+  const a = faceFrom && shows ? 0 : 180, b = faceTo && shows ? 0 : 180;
+  if (a !== b) {
+    const [f0, f1] = FLIP_AT[flipAt] || FLIP_AT.mid;
+    flipper.animate([{ transform: `rotateY(${a}deg)`, offset: 0 }, { transform: `rotateY(${a}deg)`, offset: f0 }, { transform: `rotateY(${b}deg)`, offset: f1 }, { transform: `rotateY(${b}deg)`, offset: 1 }],
+      { duration: d, easing: 'ease-in-out', fill: 'both' });
+  } else flipper.style.transform = `rotateY(${a}deg)`;
+  try { await main.finished; } catch { /* cancelled */ }
+  onLand && onLand();
+  el.remove();
+}
+
+// A landing: a tiny settle with a rotation wobble. Relative to the element's resting pose, which the page keeps in
+// the individual `translate` / `rotate` properties so `transform` is free for animations (no jump at either end).
+export function land(el, strength = 1) {
+  if (!el || reduced()) return;
+  el.animate([
+    { transform: `translateY(${-2.5 * strength}px) rotate(${1.8 * strength}deg) scale(${1 + 0.035 * strength})` },
+    { transform: `translateY(${0.6 * strength}px) rotate(${-0.8 * strength}deg) scale(.995)`, offset: 0.55 },
+    { transform: 'none' },
+  ], { duration: dur(230), easing: 'ease-out' });
+}

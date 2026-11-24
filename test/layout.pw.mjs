@@ -69,7 +69,7 @@ async function playTurns(p, ms) {
       const tiles = await p.$$('.rack .rt:not(.gone)');
       if (tiles.length) await tiles[tiles.length - 1].dblclick();
     }
-    await p.clock.runFor(400); spent += 400;
+    { const step = st.draw || st.discard ? 300 : 1200; await p.clock.runFor(step); spent += step; }
   }
   return 'time';
 }
@@ -141,9 +141,22 @@ async function play101(p, ms, stats) {
       const tiles = await p.$$('.rack .rt:not(.gone)');
       if (tiles.length) await tiles[tiles.length - 1].dblclick();
     }
-    await p.clock.runFor(400); spent += 400;
+    { const step = s.draw || s.discard ? 300 : 1200; await p.clock.runFor(step); spent += step; }
   }
   return 'time';
+}
+
+// Opponents (plate + ıstaka) must never cover the pile, the indicator, a discard stack, the melds or my rack.
+async function checkSeats(p, label) {
+  const bad = await p.evaluate(() => {
+    const hit = (a, b) => a.left < b.right - 1 && b.left < a.right - 1 && a.top < b.bottom - 1 && b.top < a.bottom - 1;
+    const seats = [...document.querySelectorAll('.seat.opp')].map(e => [e.className.match(/p\d/)[0], e.getBoundingClientRect()]);
+    const things = ['#pile', '.indt', '.okeyis:not([hidden])', '.ds .dstack', '#melds:not([hidden])', '#rack'].flatMap(sel => [...document.querySelectorAll(sel)].map(e => [sel, e.getBoundingClientRect()]));
+    const out = [];
+    for (const [sp, sr] of seats) for (const [tn, tr] of things) if (tr.width && hit(sr, tr)) out.push(`${sp} covers ${tn}`);
+    return out;
+  });
+  if (bad.length) bad.slice(0, 4).forEach(m => fail(`${label}: ${m}`)); else ok(`${label}: opponents clear of the pile, discards and rack`);
 }
 
 const TABLE_SEL = ['.rack .rt', '#pile', '.seat .av', '.ds .dstack', '.bar .chip', '.top .ibtn', '.ind', '.status', '#o101 button', '#melds'];
@@ -167,6 +180,7 @@ if (only !== 'e2e') for (const [w, h] of SIZES) {
   await playTurns(p, 24_000);
   await p.screenshot({ path: join(SHOTS, `table-${tag}.png`) });
   await checkFit(p, 'table', TABLE_SEL);
+  await checkSeats(p, 'table');
   const tw = await p.evaluate(() => document.querySelector('.rack .rt').getBoundingClientRect().width);
   if (tw < 24) fail(`table: rack tiles only ${tw.toFixed(1)}px wide`); else ok(`table: rack tiles ${tw.toFixed(1)}px wide`);
   await p.click('#bEmote');
@@ -205,6 +219,7 @@ if (only !== 'e2e') for (const [w, h] of SIZES) {
   const res101 = await play101(p, 40_000, st101);
   await p.screenshot({ path: join(SHOTS, `t101-${tag}.png`) });
   await checkFit(p, '101 table', TABLE_SEL);
+  await checkSeats(p, '101 table');
   const tw101 = await p.evaluate(() => document.querySelector('.rack .rt').getBoundingClientRect().width);
   if (tw101 < 21) fail(`101: rack tiles only ${tw101.toFixed(1)}px wide`); else ok(`101: rack tiles ${tw101.toFixed(1)}px wide (15 a tier)`);
   if (res101 === 'result') {

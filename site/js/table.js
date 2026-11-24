@@ -7,7 +7,7 @@ import { sfx } from './sound.js';
 import { Rack, layoutFromGroups } from './rack.js';
 import { tileHTML, tileClass, tileInner, faceHTML, okeyFace, color, num, finishCheck, arrange, loadEngine, getEngine, isOkey } from './tiles.js';
 import { load101, rules101, rackOpening, bestLayout, boardHTML, story101, rows101 } from './v101.js';
-import { flyTile, flyStack, flipOver, settle, wait, dur, rectOf, reduced, shake, pulse } from './anim.js';
+import { flyTile, flipOver, settle, wait, dur, rectOf, reduced, shake, pulse, fly, geomOf, land } from './anim.js';
 import { storyOf, deltasHTML, handGroupsHTML, podiumHTML } from './result.js';
 import { confirmSheet } from './sheets.js';
 import { recordRound, recordMatch, tipCheck, tipNote } from './tip.js';
@@ -33,10 +33,10 @@ export class TableScreen {
   seatAt(p) { const you = this.view && this.view.you != null ? this.view.you : 0; return (you + p) % 4; }
 
   mount() {
-    const seat = p => `<div class="seat p${p}" data-p="${p}">
+    const seat = p => `<div class="seat opp p${p}" data-p="${p}">
         <div class="plate"><div class="av"><svg class="ring" viewBox="0 0 44 44" aria-hidden="true"><circle class="rbg" cx="22" cy="22" r="20"/><circle class="rfg" cx="22" cy="22" r="20" stroke-dasharray="${RING}" stroke-dashoffset="0"/></svg><span class="emo"></span><b class="secs"></b></div>
         <div class="meta"><div class="nm"></div><div class="sub"><span class="sc"></span><span class="tag"></span></div></div></div>
-        <div class="mrack" aria-hidden="true"></div><div class="bub" aria-live="polite"></div></div>`;
+        <div class="orack" aria-hidden="true"><div class="otiles"></div><span class="ocount"></span></div><div class="bub" aria-live="polite"></div></div>`;
     const ds = p => `<div class="ds d${p}" data-p="${p}"><div class="dstack"></div><span class="dn"></span>${p === 0 ? `<span class="dlbl">${t('table.discardHere')}</span>` : p === 3 ? `<span class="dlbl">${t('table.takeHere')}</span>` : ''}</div>`;
     this.root.innerHTML = `<section class="tbl" id="tbl">
       <div class="felt" id="felt">
@@ -45,9 +45,9 @@ export class TableScreen {
         ${ds(2)}${ds(1)}${ds(3)}${ds(0)}
         <div class="center">
           <div class="cring" aria-hidden="true"></div>
-          <button class="pile" id="pile" aria-label="${esc(t('table.pile'))}"><span class="pstack"></span><span class="pcount"></span></button>
+          <button class="pile" id="pile" aria-label="${esc(t('table.pile'))}"><span class="pblock"><span class="pside"></span><span class="ptop tile back"></span><span class="pplate"></span></span></button>
           <div class="ind" id="ind"><div class="indt"></div><small>${t('table.indicator')}</small></div>
-          <div class="okeyis" id="okeyis" hidden><small>${t('table.okey')}</small><div class="okt"></div></div>
+          <div class="okeyis" id="okeyis" hidden><span class="arrow" aria-hidden="true">›</span><div class="okt"></div></div>
           <div class="fz" id="fz" aria-hidden="true"><span></span></div>
           <div class="melds" id="melds" hidden></div>
         </div>
@@ -127,8 +127,16 @@ export class TableScreen {
     this.mwMax = Math.round(Math.max(12, Math.min(wide ? 30 : 22, tw * 0.8)));
     this.felt.style.setProperty('--dw', dw + 'px');
     this.felt.style.setProperty('--tw', tw + 'px');
-    const tiles = this.is101 ? 22 : 15;   // a full opponent rack, in mini tile backs
-    this.felt.style.setProperty('--bw', Math.round(Math.max(5, land ? Math.min(dw * (wide ? 0.27 : 0.3), (W * 0.2) / tiles) : Math.min(dw * 0.22, (H - 330) / (tiles * 2)))) + 'px');
+    // opponents' racks are fixed-length ıstakas (15 slots, 22 in 101) of standing tile backs
+    const cap = this.is101 ? 22 : 15;
+    // landscape: the side racks must fit their column (beside my rack), the top one beside its plate
+    const rackW = cols * tw + (cols - 1) * gap + tw * 0.64 + 10, sideW = (W - rackW - (wide ? 110 : 40)) / 2;
+    const bw = Math.floor(land ? Math.min((sideW - 14) / cap - 1, (rackW - 150) / cap - 1, H * 0.075, wide ? 19 : 13) : Math.min((W - 196) / cap, (H * 0.38) / cap, 13));
+    this.bw = Math.max(6, bw); this.dw = dw;
+    this.felt.style.setProperty('--bw', this.bw + 'px');
+    this.felt.style.setProperty('--cap', cap);
+    // then make sure: smaller tile backs until no opponent touches the pile, a discard stack, the melds or my rack
+    for (let i = 0; i < 8 && this.bw > 5 && this.seatsCollide(); i++) { this.bw--; this.felt.style.setProperty('--bw', this.bw + 'px'); }
   }
 
   // ---- incoming ----
@@ -140,6 +148,7 @@ export class TableScreen {
     this.rack.setCols(is ? 15 : 13);
     this.layout();
     if (is) load101().then(() => { if (this.view) { this.renderMelds(); this.strip101(); } });
+    for (let p = 1; p < 4; p++) { const b = this.oppBox(p); if (b) b.innerHTML = ''; }
   }
   async update(view, events = []) {
     this.setVariant(view);
@@ -181,6 +190,7 @@ export class TableScreen {
       if (!restored) this.rack.layout(layoutFromGroups(arrange(view.hand, r.okey, 'runs'), this.rack.cols));
     }
     this.rack.setOkey(r.okey);
+    this.stacks = [[], [], [], []];
     this.resultShown = null; this.hideResult();
   }
 
@@ -248,6 +258,7 @@ export class TableScreen {
     while (mw > 11 && el.scrollHeight > el.clientHeight + 1) { mw--; el.style.setProperty('--mw', mw + 'px'); }
   }
   meldEl(i) { return $(`#melds .mg[data-i="${i}"]`, this.root); }
+  mwNow() { return parseFloat(getComputedStyle($('#melds', this.root)).getPropertyValue('--mw')) || 18; }
 
   // ---- 101: the opening strip under the table (counter, best opening, open / lay, put back the taken tile) ----
   strip101() {
@@ -320,36 +331,87 @@ export class TableScreen {
       <div class="pl2"><span>${v.settings && v.settings.turnSeconds ? t('placard.turn', { s: v.settings.turnSeconds }) : t('placard.noClock')}</span><span class="led g">${this.is101 ? t('placard.v101Rounds', { n: v.settings.rounds }) : v.settings && v.settings.rounds ? t('placard.rounds', { n: v.settings.rounds }) : t('placard.toZero')}</span></div>`;
   }
 
-  setMiniRack(p, n) {
-    const el = $(`.seat.p${p} .mrack`, this.root);
-    if (el.childElementCount !== n) el.innerHTML = '<i></i>'.repeat(Math.max(0, n));
+  seatsCollide() {
+    const hit = (a, b) => b.width && a.left < b.right - 1 && b.left < a.right - 1 && a.top < b.bottom - 1 && b.top < a.bottom - 1;
+    const things = $$('#pile, .indt, .okeyis:not([hidden]), .ds .dstack, #melds:not([hidden]), #rack', this.root).map(e => e.getBoundingClientRect());
+    return $$('.seat.opp', this.root).some(e => { const r = e.getBoundingClientRect(); return things.some(x => hit(r, x)); });
   }
-  setDiscard(p, st) {
+  // ---- opponents: fixed-length racks filled from the start, so adding or removing a tile never moves the others ----
+  oppBox(p) { return $(`.seat.p${p} .otiles`, this.root); }
+  sideVertical(p) { return (p === 1 || p === 3) && !this.felt.classList.contains('land'); }
+  setMiniRack(p, n) {
+    const box = this.oppBox(p); if (!box) return [];
+    n = Math.max(0, n | 0);
+    while (box.childElementCount > n) box.lastElementChild.remove();
+    const added = [];
+    while (box.childElementCount < n) { const s = document.createElement('i'); s.className = 'os'; s.innerHTML = '<b class="tile back"></b>'; box.appendChild(s); added.push(s); }
+    this.oppCount(p);
+    return added;
+  }
+  oppCount(p) { const box = this.oppBox(p); if (box) box.parentNode.querySelector('.ocount').textContent = box.querySelectorAll('.os:not(.hid)').length || ''; }
+  oppSlots(p) { return [...this.oppBox(p).children]; }
+  oppGeom(p, slot) { const bw = this.bw || 12; return geomOf(slot, bw, bw * 1.5, this.sideVertical(p) ? (p === 1 ? 90 : -90) : 0); }
+  // a new hidden slot at the end of the rack (a tile on its way); reveal it when the tile lands
+  oppAdd(p) { const box = this.oppBox(p), s = document.createElement('i'); s.className = 'os hid'; s.innerHTML = '<b class="tile back"></b>'; box.appendChild(s); return s; }
+  oppReveal(p, slot) { slot.classList.remove('hid'); this.oppCount(p); }
+  // the last tile leaves the rack: its geometry, then it is gone
+  oppTake(p) { const box = this.oppBox(p), s = box.lastElementChild || this.oppAdd(p); const g = this.oppGeom(p, s); s.remove(); this.oppCount(p); return g; }
+
+  // Discard stacks: up to three tiles of depth under the top one, each with its own small, stable rotation.
+  stackOf(p, top) {
+    const seat = this.seatAt(p), ids = (this.stacks ||= [[], [], [], []])[seat];
+    if (top != null && ids[ids.length - 1] !== top) { ids.length = 0; ids.push(top); }
+    if (top == null) ids.length = 0;
+    return ids;
+  }
+  stackPush(seat, id) { const ids = (this.stacks ||= [[], [], [], []])[seat]; ids.push(id); if (ids.length > 4) ids.shift(); }
+  stackPop(seat) { const ids = (this.stacks ||= [[], [], [], []])[seat]; ids.pop(); }
+  setDiscard(p, st, hideTop = false) {
     const el = $(`.ds.d${p}`, this.root), box = $('.dstack', el);
-    const top = st ? st.top : null, n = st ? st.count : 0;
-    box.style.setProperty('--n', Math.min(n, 8));
-    const okey = this.view.round && this.view.round.okey;
-    const html = top != null ? `<div class="${tileClass(top, okey)} dtop" data-id="${top}">${tileInner(top)}</div>` : '';
-    if (box.dataset.top !== String(top)) { box.innerHTML = html; box.dataset.top = String(top); }
+    const top = st ? st.top : null, n = st ? st.count : 0, layers = Math.min(Math.max(n - 1, 0), 3);
+    const ids = this.stackOf(p, n ? top : null);
+    const key = `${top}|${layers}|${n > 0}|${ids.join(',')}`;
+    if (box.dataset.k !== key) {
+      const okey = this.view.round && this.view.round.okey;
+      let html = '';
+      for (let i = 0; i < layers; i++) {
+        const id = ids[ids.length - 1 - (layers - i)];
+        html += id != null ? `<div class="${tileClass(id, okey)} dl face" style="--i:${i};--r:${tileRot(id)}deg">${tileInner(id)}</div>` : `<i class="dl" style="--i:${i};--r:${layerRot(p, i)}deg"></i>`;
+      }
+      if (n) html += top != null
+        ? `<div class="${tileClass(top, okey)} dtop" data-id="${top}" style="--i:${layers};--r:${tileRot(top)}deg">${tileInner(top)}</div>`
+        : `<div class="tile back dtop" style="--i:${layers};--r:0deg"></div>`;
+      box.innerHTML = html; box.dataset.k = key;
+    }
+    const tp = box.querySelector('.dtop'); if (tp) tp.style.visibility = hideTop ? 'hidden' : '';
     el.classList.toggle('empty', !n);
     $('.dn', el).textContent = n > 1 ? n : '';
   }
+  discTop(p) { return $(`.ds.d${p} .dtop`, this.root); }
+  discGeom(p) { const el = this.discTop(p); if (!el) return geomOf($(`.ds.d${p} .dstack`, this.root), this.dw, this.dw * 1.5, 0); return geomOf(el, this.dw, this.dw * 1.5, el.dataset.id != null ? tileRot(+el.dataset.id) : 0); }
+
+  // The closed pile: a block of stacked tiles whose top sinks as it empties, with an engraved count plate.
   setPile(n) {
     const el = $('#pile', this.root);
-    $('.pcount', el).textContent = n;
-    el.style.setProperty('--h', Math.max(0, Math.min(8, Math.ceil(n / 10))));
+    $('.pplate', el).textContent = n;
+    el.style.setProperty('--pt', (2 + Math.max(0, n) * 0.15).toFixed(1) + 'px');
     el.classList.toggle('low', n > 0 && n <= 8);
     el.classList.toggle('none', !n);
   }
-  setIndicator(id, faceDown = false) {
+  pileGeom(k = 0) { const g = geomOf($('#pile .ptop', this.root), this.dw, this.dw * 1.5, 0); if (g) g.cy -= k * 1.4; return g; }
+
+  // The indicator lies face up beside the pile; the okey (one up, same colour) wears a gold ribbon.
+  setIndicator(id, faceDown = false, hidden = false) {
     const el = $('.indt', this.root), ok = $('#okeyis', this.root);
     ok.hidden = id == null || faceDown;
-    if (id != null && !faceDown) { const f = okeyFace(id); const k = f.color + '.' + f.num; if (ok.dataset.k !== k) { ok.dataset.k = k; $('.okt', ok).innerHTML = faceHTML(f, 'okey'); } }
+    if (id != null && !faceDown) { const f = okeyFace(id); const k = f.color + '.' + f.num; if (ok.dataset.k !== k) { ok.dataset.k = k; $('.okt', ok).innerHTML = faceHTML(f, 'okey') + `<span class="ribbon">${t('table.okeyRibbon')}</span>`; } }
     if (id == null) { el.innerHTML = ''; el.dataset.id = ''; return; }
-    if (el.dataset.id === String(id) + (faceDown ? 'b' : '')) return;
-    el.dataset.id = String(id) + (faceDown ? 'b' : '');
-    el.innerHTML = faceDown ? '<div class="tile back"></div>' : `<div class="${tileClass(id, null)}">${tileInner(id)}</div>`;
+    const key = String(id) + (faceDown ? 'b' : '') + (hidden ? 'h' : '');
+    if (el.dataset.id === key) return;
+    el.dataset.id = key;
+    el.innerHTML = faceDown ? `<div class="tile back"${hidden ? ' style="visibility:hidden"' : ''}></div>` : `<div class="${tileClass(id, null)}">${tileInner(id)}</div>`;
   }
+  indGeom() { return geomOf($('.indt .tile', this.root), this.dw, this.dw * 1.5, -2.5); }
 
   status() {
     const v = this.view, r = v.round, el = $('#status', this.root);
@@ -475,16 +537,15 @@ export class TableScreen {
     const hide = new Set(ids);
     this.view = { ...this.view, round: { ...this.view.round, table: r.table } };
     this.renderMelds(r.table, hide);
-    const flights = ids.map((id, k) => {
+    const plan = ids.map(id => {
       const dst = $(`#melds .tile[data-id="${id}"]`, this.root);
-      const from = seat === me ? this.rack.tileRect(id) : shrink(rectOf($(`.seat.p${p} .mrack`, this.root)), rectOf(dst));
+      const from = seat === me ? rectGeo(this.rack.tileRect(id)) : this.oppTake(p);
       if (seat === me) this.rack.hide(id, true);
-      return flyTile({ id, okey: r.okey, from, to: rectOf(dst), start: seat === me ? 'face' : 'back', ms: 380, arc: 0.18, delay: k * 45 })
-        .then(() => { if (dst) { dst.classList.remove('gone'); settle(dst, 0.5); } if (k % 2 === 0) sfx('clack', { level: 0.5 }); });
+      return { id, dst, from, to: geomOf(dst) };
     });
-    await Promise.all(flights);
+    await Promise.all(plan.map(({ id, dst, from, to }, k) => fly({ id, okey: r.okey, from, to, faceFrom: seat === me, faceTo: true, flipAt: 'early', ms: 360, arc: 0.18, delay: k * 45,
+      onLand: () => { if (dst) dst.classList.remove('gone'); if (k % 2 === 0) sfx('clack', { level: 0.5 }); } })));
     this.disp.count[seat] = Math.max(0, this.disp.count[seat] - ids.length);
-    if (p) this.setMiniRack(p, this.disp.count[seat]);
   }
   selectChanged(id) { this.felt.classList.toggle('picked', id != null); }
 
@@ -507,16 +568,13 @@ export class TableScreen {
     }
     this.pendingDiscard = id;
     this.rack.hide(id, true);
-    const to = rectOf($('.ds.d0 .dstack', this.root));
-    const okey = this.view.round.okey;
+    const okey = this.view.round.okey, me = this.view.you;
+    this.stackPush(me, id);
+    this.setDiscard(0, { top: id, count: (this.disp.disc[me].count || 0) + 1 }, true);
+    const top = this.discTop(0), to = this.discGeom(0);
     this.act({ type: 'discard', tile: id });
-    flyTile({ id, okey, from: fromRect, to, start: 'face', ms: 300, arc: 0.12, tilt: 8 }).then(() => {
-      if (this.pendingDiscard === id) {
-        const me = this.view.you;
-        this.setDiscard(0, { top: id, count: (this.disp.disc[me].count || 0) + 1 });
-        sfx('settle'); settle($('.ds.d0 .dtop', this.root));
-      }
-    });
+    fly({ id, okey, from: rectGeo(fromRect), to, faceFrom: true, faceTo: true, ms: 300, arc: 0.14,
+      onLand: () => { if (this.pendingDiscard === id || this.discTop(0) === top) { top.style.visibility = ''; land(top); sfx('settle'); } } });
     return true;
   }
   tryFinish(id, fromRect) {
@@ -527,7 +585,7 @@ export class TableScreen {
     const groups = res ? res.groups : this.rack.groups().map(g => g.filter(x => x !== id)).filter(g => g.length);
     this.pendingDiscard = id; this.rack.hide(id, true);
     const okey = this.view.round.okey;
-    flyTile({ id, okey, from: fromRect, to: rectOf($('#pile', this.root)), start: 'face', ms: 360, cls: 'golden' });
+    void fromRect; void okey;   // the reveal flies it, with the rest of the hand
     this.act({ type: 'finish', tile: id, groups });
     return true;
   }
@@ -589,9 +647,12 @@ export class TableScreen {
       case 'draw': {
         const p = this.pos(ev.seat), d = this.disp;
         const prevSeat = (ev.seat + 3) % 4;
-        const fromRect = ev.from === 'pile' ? rectOf($('#pile .pstack', this.root)) : rectOf($(`.ds.d${this.pos(prevSeat)} .dstack`, this.root));
+        const fromGeo = ev.from === 'pile' ? this.pileGeom() : this.discGeom(this.pos(prevSeat));
+        const fromRect = geoRect(fromGeo);
         if (ev.from === 'discard') {
           const st = d.disc[prevSeat]; st.count = Math.max(0, st.count - 1);
+          this.stackPop(prevSeat);
+          const known = this.stacks[prevSeat]; if (st.count && known.length && next.seats[prevSeat].discard.count === st.count) known[known.length - 1] = next.seats[prevSeat].discard.top;
           st.top = st.count && next.seats[prevSeat].discard.count === st.count ? next.seats[prevSeat].discard.top : null;
           this.setDiscard(this.pos(prevSeat), st);
         } else { d.pile = Math.max(0, d.pile - 1); this.setPile(d.pile); }
@@ -607,10 +668,11 @@ export class TableScreen {
           this.rack.hide(tile, false); sfx('tick'); settle(this.rack.els.get(tile), 0.6);
           d.count[me]++;
         } else {
-          const to = rectOf($(`.seat.p${p} .mrack`, this.root));
-          sfx('draw', {});
-          await flyTile({ id: ev.from === 'discard' ? ev.tile : null, okey, from: fromRect, to: shrink(to, fromRect), start: ev.from === 'pile' ? 'back' : 'face', ms: 400, arc: 0.15 });
-          d.count[ev.seat]++; this.setMiniRack(p, d.count[ev.seat]);
+          // a tile back slides from the pile to their rack; a discard they take slides face up and turns in
+          const slot = this.oppAdd(p), to = this.oppGeom(p, slot), face = ev.from === 'discard';
+          sfx('draw');
+          await fly({ id: face ? ev.tile : null, okey, from: fromGeo, to, faceFrom: face, faceTo: false, flipAt: 'late', ms: 360, arc: 0.14, onLand: () => { this.oppReveal(p, slot); sfx('tick'); } });
+          d.count[ev.seat]++;
         }
         return;
       }
@@ -623,14 +685,16 @@ export class TableScreen {
           await wait(120);
           return;
         }
-        const to = rectOf($(`.ds.d${p} .dstack`, this.root));
+        // the tile lifts off their rack, turns face up early and arcs onto their stack
         let from;
-        if (ev.seat === me) { from = this.rack.tileRect(ev.tile); this.rack.hide(ev.tile, true); }
-        else { const mr = rectOf($(`.seat.p${p} .mrack`, this.root)); from = shrink(mr, to); }
-        await flyTile({ id: ev.tile, okey, from, to, start: ev.seat === me ? 'face' : 'back', ms: 440, arc: 0.25, tilt: p === 1 ? -14 : 14 });
+        if (ev.seat === me) { from = rectGeo(this.rack.tileRect(ev.tile)); this.rack.hide(ev.tile, true); }
+        else from = this.oppTake(p);
         d.count[ev.seat] = Math.max(0, d.count[ev.seat] - 1); st.top = ev.tile; st.count++;
-        if (p) this.setMiniRack(p, d.count[ev.seat]);
-        this.setDiscard(p, st); sfx('settle'); settle($(`.ds.d${p} .dtop`, this.root));
+        this.stackPush(ev.seat, ev.tile);
+        this.setDiscard(p, st, true);
+        const top = this.discTop(p), to = this.discGeom(p);
+        await fly({ id: ev.tile, okey, from, to, faceFrom: ev.seat === me, faceTo: true, flipAt: 'early', ms: 400, arc: 0.26,
+          onLand: () => { top.style.visibility = ''; land(top); sfx('settle'); } });
         return;
       }
       case 'showIndicator': return this.showIndicatorFx(ev, true);
@@ -652,17 +716,19 @@ export class TableScreen {
         await this.flyToBoard(ev, next, [ev.tile], ev.seat);
         if (ev.seat === me) this.pendingLay = null;
         sfx('okey');
-        const p = this.pos(ev.seat), src = rectOf(this.meldEl(ev.meld)) || rectOf($('#melds', this.root));
+        const p = this.pos(ev.seat), src = geomOf(this.meldEl(ev.meld) || $('#melds', this.root));
+        if (src) { src.w = this.mwNow(); src.h = src.w * 1.5; }
         if (ev.seat === me) {
           this.rack.hide(ev.okey, true); this.rack.sync([...this.rack.tiles(), ev.okey]);
-          await flyTile({ id: ev.okey, okey, from: src, to: this.rack.tileRect(ev.okey), start: 'face', ms: 420, arc: 0.25, cls: 'golden' });
+          await fly({ id: ev.okey, okey, from: src, to: rectGeo(this.rack.tileRect(ev.okey)), faceFrom: true, faceTo: true, ms: 420, arc: 0.25, cls: 'golden' });
           this.rack.hide(ev.okey, false); settle(this.rack.els.get(ev.okey));
-        } else await flyTile({ id: ev.okey, okey, from: src, to: shrink(rectOf($(`.seat.p${p} .mrack`, this.root)), src), start: 'face', ms: 420, arc: 0.25, cls: 'golden' });
+        } else { const slot = this.oppAdd(p); await fly({ id: ev.okey, okey, from: src, to: this.oppGeom(p, slot), faceFrom: true, faceTo: false, flipAt: 'late', ms: 420, arc: 0.25, cls: 'golden', onLand: () => this.oppReveal(p, slot) }); }
         this.disp.count[ev.seat]++;
         return;
       }
       case 'penalty': {
         const p = this.pos(ev.seat), s = next.seats[ev.seat] || {}, pl = $(`.seat.p${p} .plate`, this.root);
+        void s;
         const f = document.createElement('b'); f.className = 'delta neg'; f.textContent = '+' + ev.points;
         pl.appendChild(f); setTimeout(() => f.remove(), dur(1800) || 50);
         toast(t(ev.reason === 'okeyDiscard' ? 't101.penOkey' : 't101.penIslek', { name: esc(s.name || ''), n: ev.points }), 'err', 2600);
@@ -681,9 +747,10 @@ export class TableScreen {
   async takeFx(ev, next, undo) {
     const okey = (next.round || {}).okey, me = next.you, p = this.pos(ev.seat), d = this.disp;
     const prevSeat = (ev.seat + 3) % 4, pp = this.pos(prevSeat), st = d.disc[prevSeat];
-    const stackRect = rectOf($(`.ds.d${pp} .dstack`, this.root));
     if (!undo) {
+      const from = this.discGeom(pp);
       st.count = Math.max(0, st.count - 1);
+      this.stackPop(prevSeat);
       st.top = st.count && next.seats[prevSeat].discard.count === st.count ? next.seats[prevSeat].discard.top : null;
       this.setDiscard(pp, st);
       if (ev.seat === me) {
@@ -692,74 +759,91 @@ export class TableScreen {
         this.rack.hide(ev.tile, true); this.rack.sync([...this.rack.tiles(), ev.tile], new Map([[ev.tile, slot]]));
         this.rack.flag(ev.tile, 'taken');
         sfx('draw');
-        await flyTile({ id: ev.tile, okey, from: (pd && pd.rect) || stackRect, to: this.rack.tileRect(ev.tile), start: 'face', ms: pd && pd.rect ? 160 : 400, arc: 0.18 });
+        await fly({ id: ev.tile, okey, from: pd && pd.rect ? rectGeo(pd.rect) : from, to: rectGeo(this.rack.tileRect(ev.tile)), faceFrom: true, faceTo: true, ms: pd && pd.rect ? 160 : 380, arc: 0.18 });
         this.rack.hide(ev.tile, false); settle(this.rack.els.get(ev.tile), 0.6);
       } else {
-        await flyTile({ id: ev.tile, okey, from: stackRect, to: shrink(rectOf($(`.seat.p${p} .mrack`, this.root)), stackRect), start: 'face', ms: 400, arc: 0.15 });
+        const slot = this.oppAdd(p);
+        await fly({ id: ev.tile, okey, from, to: this.oppGeom(p, slot), faceFrom: true, faceTo: false, flipAt: 'late', ms: 380, arc: 0.15, onLand: () => this.oppReveal(p, slot) });
         toast(t('t101.took', { name: esc((next.seats[ev.seat] || {}).name || '') }), '', 1800);
       }
       d.count[ev.seat]++;
     } else {
-      const from = ev.seat === me ? this.rack.tileRect(ev.tile) : shrink(rectOf($(`.seat.p${p} .mrack`, this.root)), stackRect);
+      const from = ev.seat === me ? rectGeo(this.rack.tileRect(ev.tile)) : this.oppTake(p);
       if (ev.seat === me) this.rack.hide(ev.tile, true);
-      await flyTile({ id: ev.tile, okey, from, to: stackRect, start: 'face', ms: 360, arc: 0.2 });
-      st.count++; st.top = ev.tile; this.setDiscard(pp, st); sfx('settle');
+      st.count++; st.top = ev.tile; this.stackPush(prevSeat, ev.tile); this.setDiscard(pp, st, true);
+      const top = this.discTop(pp);
+      await fly({ id: ev.tile, okey, from, to: this.discGeom(pp), faceFrom: ev.seat === me, faceTo: true, flipAt: 'early', ms: 360, arc: 0.2, onLaunch: null, onLand: () => { top.style.visibility = ''; land(top); sfx('settle'); } });
       d.count[ev.seat] = Math.max(0, d.count[ev.seat] - 1);
     }
-    if (p) this.setMiniRack(p, d.count[ev.seat]);
   }
 
-  // The deal: a quick shuffle, stacks of five fly to every rack, your tiles land slot by slot, the indicator turns.
+  // The deal: the pile shuffles, packets of five go out seat by seat in turn order (the dealer's extra tile last),
+  // the pile sinks in step, your tiles turn over as they land, then the indicator turns and the okey is marked.
   async deal(ev, next) {
     this.dealing = true;
     this.view = next;
     this.newRound(next);
-    const d = { count: [0, 0, 0, 0], disc: [0, 1, 2, 3].map(() => ({ top: null, count: 0 })), pile: 106 };
+    const want = next.seats.map((s, i) => (i === next.you && next.hand ? next.hand.length : s.handCount || 0));
+    const d = { count: want.slice(), disc: [0, 1, 2, 3].map(() => ({ top: null, count: 0 })), pile: 106 };
     this.disp = d;
     const hand = next.hand || [];
     hand.forEach(id => this.rack.hide(id, true));
     this.render();
+    for (let p = 1; p < 4; p++) { this.oppSlots(p).forEach(s => s.classList.add('hid')); this.oppCount(p); }
     this.setIndicator(null);
     this.setPile(106);
-    hand.forEach(id => this.rack.hide(id, true));
     const pile = $('#pile', this.root);
     sfx('shuffle');
     pile.classList.add('shuffling');
-    await wait(650);
+    await wait(480);
     pile.classList.remove('shuffling');
-    const from = rectOf($('#pile .pstack', this.root));
-    const order = this.rack.slots.filter(x => x != null);
-    let shown = 0;
+    // every target is measured now, before anything moves (the racks are fixed-length, so nothing shifts)
+    const pileG = this.pileGeom();
+    const me = next.you, base = want.map((n, i) => (i === ev.dealer ? n - 1 : n)), given = [0, 0, 0, 0];
+    const order = [1, 2, 3, 0].map(k => (ev.dealer + k) % 4);
+    const slots = [0, 1, 2, 3].map(seat => (seat === me || this.pos(seat) === 0 ? null : this.oppSlots(this.pos(seat))));
+    const myOrder = hand.slice();
+    const gap = this.is101 ? 95 : 125;
+    let k = 0, left = 106;
     const flights = [];
-    let k = 0;
-    const want = next.seats.map((s, i) => (i === next.you && next.hand ? next.hand.length : s.handCount || 0)), given = [0, 0, 0, 0];
-    for (let pass = 0; given.some((g, i) => g < want[i]) && pass < 6; pass++) {
-      for (let i = 0; i < 4; i++) {
-        const seat = (ev.dealer + i) % 4, p = this.pos(seat);
-        const n = Math.min(5, want[seat] - given[seat]); if (n <= 0) continue;
-        given[seat] += n;
-        const to = p === 0 ? rectOf($('#rack', this.root)) : rectOf($(`.seat.p${p} .mrack`, this.root));
-        const delay = k * 95; k++;
-        flights.push(flyStack({ from, to, n, ms: 330, delay, vertical: p === 1 || p === 3 }).then(() => {
-          d.count[seat] += n; d.pile -= n; this.setPile(d.pile); sfx('deal');
-          if (p) this.setMiniRack(p, d.count[seat]);
-          else if (next.you != null) {
-            const batch = order.slice(shown, shown + n); shown += n;
-            batch.forEach((id, j) => setTimeout(() => { this.rack.hide(id, false); const el = this.rack.els.get(id); if (el && !reduced()) el.animate([{ transform: el.style.transform + ' translateY(-10px) scale(1.15)', opacity: 0 }, { transform: el.style.transform, opacity: 1 }], { duration: dur(200), easing: 'cubic-bezier(.2,.9,.3,1.3)' }); }, dur(j * 40)));
-          }
-        }));
+    const packet = (seat, from, n) => {
+      const delay = k++ * gap, p = this.pos(seat);
+      left -= n; const after = left;
+      for (let j = 0; j < n; j++) {
+        const launch = j === 0 ? () => { this.setPile(after); sfx('deal'); } : null;
+        if (seat === me) {
+          const id = myOrder[from + j], r = this.rack.slotRect(this.rack.slotOf(id));
+          flights.push(fly({ id, okey: next.round.okey, from: { ...pileG, cy: pileG.cy - j * 1.4 }, to: rectGeo(r), faceFrom: false, faceTo: true, flipAt: 'late', ms: 360, arc: 0.16, delay: delay + j * 26,
+            onLaunch: launch, onLand: () => this.rack.hide(id, false) }));
+        } else {
+          const slot = slots[seat][from + j];
+          flights.push(fly({ from: { ...pileG, cy: pileG.cy - j * 1.4 }, to: this.oppGeom(p, slot), ms: 330, arc: 0.12, delay: delay + j * 16,
+            onLaunch: launch, onLand: () => this.oppReveal(p, slot) }));
+        }
+      }
+    };
+    while (order.some(seat => given[seat] < base[seat])) {
+      for (const seat of order) {
+        const n = Math.min(5, base[seat] - given[seat]); if (n <= 0) continue;
+        packet(seat, given[seat], n); given[seat] += n;
       }
     }
+    packet(ev.dealer, base[ev.dealer], want[ev.dealer] - base[ev.dealer]);   // the dealer's extra tile
     await Promise.all(flights);
-    await wait(260);
-    order.forEach(id => this.rack.hide(id, false));
-    // the indicator comes off the pile and turns over
-    const ind = $('.indt', this.root);
-    this.setIndicator(ev.indicator, true);
-    await flyTile({ id: null, from: rectOf($('#pile .pstack', this.root)), to: rectOf(ind), ms: 360, arc: 0.3 });
-    d.pile = ev.pileCount; this.setPile(d.pile);
+    order.forEach(seat => { if (seat !== me && this.pos(seat)) this.oppSlots(this.pos(seat)).forEach(s => s.classList.remove('hid')); });
+    hand.forEach(id => this.rack.hide(id, false));
+    // the indicator comes off the pile, lands beside it face down and turns over; then the okey gets its ribbon
+    this.setIndicator(ev.indicator, true, true);
+    const indTile = $('.indt .tile', this.root);
+    await fly({ from: this.pileGeom(), to: this.indGeom(), ms: 340, arc: 0.22, onLaunch: () => this.setPile(ev.pileCount), onLand: () => { indTile.style.visibility = ''; } });
     sfx('flip');
-    await flipOver(ind, () => this.setIndicator(ev.indicator), 620);
+    await flipOver($('.indt', this.root), () => this.setIndicator(ev.indicator), 520);
+    const ok = $('#okeyis', this.root);
+    if (ok && !reduced()) {
+      ok.animate([{ opacity: 0, transform: 'translateX(-8px) scale(.85)' }, { opacity: 1, transform: 'none' }], { duration: dur(320), easing: 'cubic-bezier(.2,.9,.3,1.2)' });
+      const rb = $('.ribbon', ok); if (rb) rb.animate([{ clipPath: 'inset(0 100% 0 0)' }, { clipPath: 'inset(0 0 0 0)' }], { duration: dur(360), delay: dur(160), fill: 'backwards', easing: 'ease-out' });
+      sfx('pop');
+    }
     pulse($('.ind', this.root), 'glow', 1400);
     this.dealing = false;
   }
@@ -776,9 +860,11 @@ export class TableScreen {
   }
 
   async scoreFx(ev) {
+    const story = !$('#result', this.root).hidden;
     for (let p = 0; p < 4; p++) {
       const seat = this.seatAt(p), dlt = ev.deltas[seat]; if (!dlt) continue;
       const el = $(`.seat.p${p} .plate`, this.root);
+      if (story) { $('.sc', el).textContent = ev.scores[seat]; continue; }
       const bad = this.is101 ? dlt > 0 : dlt < 0;
       const f = document.createElement('b'); f.className = 'delta ' + (bad ? 'neg' : 'pos'); f.textContent = (dlt > 0 ? '+' : '−') + Math.abs(dlt);
       el.appendChild(f); setTimeout(() => f.remove(), dur(1800) || 50);
@@ -789,13 +875,6 @@ export class TableScreen {
 
   // Someone finished: the finishing tile goes to the middle with a gold glow, then their rack tilts up and shows the hand.
   async finishFx(ev, next) {
-    const p = this.pos(ev.seat), okey = (next.round || {}).okey, me = next.you;
-    const center = rectOf($('#pile', this.root));
-    let from;
-    if (ev.seat === me && this.pendingDiscard === ev.tile) { from = null; this.pendingDiscard = null; }
-    else if (ev.seat === me) { from = this.rack.tileRect(ev.tile); this.rack.hide(ev.tile, true); }
-    else from = shrink(rectOf($(`.seat.p${p} .mrack`, this.root)), center);
-    if (from) await flyTile({ id: ev.tile, okey, from, to: center, start: ev.seat === me ? 'face' : 'back', ms: 520, arc: 0.3, cls: 'golden' });
     sfx(ev.okeyFinish ? 'okey' : 'settle');
     this.view = next;
     await this.showResult(true, ev);
@@ -831,32 +910,38 @@ export class TableScreen {
     const card = $('.rv-card', el);
     const won = r.winner === v.you;
     if (animate && !reduced()) {
-      const tiles = $$('.rv-groups .tile', el), fin = $('.rv-fin', el), rest = $$('.rhead,.deltas,.rv-acts', el);
-      tiles.forEach(x => { x.style.opacity = '0'; });
+      // the winner's tiles leave their rack and fly into the card, set by set; the finishing tile comes last, in gold
+      const tiles = $$('.rv-groups .tile', el), finEl = $('.rv-fin .tile', el), fin = $('.rv-fin', el), rest = $$('.rhead,.deltas,.rv-acts', el);
+      [...tiles, finEl].forEach(x => { if (x) x.style.visibility = 'hidden'; });
       if (fin) fin.style.opacity = '0';
       rest.forEach(x => { x.style.opacity = '0'; });
       const rackEl = $('.rv-rack', el);
-      if (rackEl && win) {
-        const sp = rectOf($(`.seat.p${this.pos(r.winner)} .plate`, this.root)) || rectOf(rackEl), rr = rectOf(rackEl);
-        await rackEl.animate([
-          { transform: `translate(${sp.left + sp.width / 2 - (rr.left + rr.width / 2)}px,${sp.top + sp.height / 2 - (rr.top + rr.height / 2)}px) perspective(700px) rotateX(78deg) scale(.35)`, opacity: 0.2 },
-          { transform: 'perspective(700px) rotateX(55deg) scale(.9)', opacity: 1, offset: 0.55 },
-          { transform: 'perspective(700px) rotateX(0deg) scale(1)', opacity: 1 },
-        ], { duration: dur(760), easing: 'cubic-bezier(.25,.8,.3,1.05)' }).finished.catch(() => {});
+      if (rackEl) await rackEl.animate([{ opacity: 0, transform: 'translateY(8px) scale(.97)' }, { opacity: 1, transform: 'none' }], { duration: dur(260), easing: 'ease-out' }).finished.catch(() => {});
+      const wp = r.winner != null ? this.pos(r.winner) : null, mine = r.winner === v.you;
+      const okey = v.round && v.round.okey;
+      const src = id => {
+        if (mine) { const rr = this.rack.tileRect(id); if (rr) { this.rack.hide(id, true); return rectGeo(rr); } return this.discGeom(0); }
+        return wp ? this.oppTake(wp) : this.pileGeom();
+      };
+      const flights = [];
+      let k = 0;
+      $$('.rv-groups .rg', el).forEach((g, gi) => {
+        $$('.tile', g).forEach(x => {
+          const id = +x.dataset.id, from = src(id), to = geomOf(x);
+          flights.push(fly({ id, okey, from, to, faceFrom: mine, faceTo: true, flipAt: 'early', ms: 380, arc: 0.2, delay: k * 42 + gi * 70,
+            onLand: () => { x.style.visibility = ''; if (k % 2) sfx('clack', { level: 0.45, pitch: 1.1 }); } }));
+          k++;
+        });
+      });
+      if (finEl) {
+        if (fin) fin.style.opacity = '';
+        const from = src(r.tile);
+        flights.push(fly({ id: r.tile, okey, from, to: geomOf(finEl), faceFrom: mine, faceTo: true, flipAt: 'early', ms: 440, arc: 0.3, cls: 'golden', delay: k * 42 + 160,
+          onLand: () => { finEl.style.visibility = ''; land(finEl, 1.4); sfx('clack'); } }));
       }
-      const groups = $$('.rv-groups .rg', el);
-      for (const g of groups) {
-        for (const x of $$('.tile', g)) {
-          x.style.opacity = '';
-          x.animate([{ transform: 'rotateY(90deg) translateY(-6px)', opacity: 0.3 }, { transform: 'none', opacity: 1 }], { duration: dur(200), easing: 'ease-out' });
-          sfx('clack', { level: 0.5, pitch: 1.1 });
-          await wait(58);
-        }
-        g.animate([{ boxShadow: '0 0 0 0 rgba(241,212,138,0)' }, { boxShadow: '0 0 14px 2px rgba(241,212,138,.55)' }, { boxShadow: '0 0 0 0 rgba(241,212,138,0)' }], { duration: dur(600) });
-        await wait(110);
-      }
-      if (fin) { fin.style.opacity = ''; fin.animate([{ transform: 'scale(1.6)', opacity: 0 }, { transform: 'scale(1)', opacity: 1 }], { duration: dur(380), easing: 'cubic-bezier(.2,.9,.3,1.3)' }); sfx('clack'); }
-      await wait(260);
+      await Promise.all(flights);
+      this.pendingDiscard = null;
+      await wait(200);
       rest.forEach((x, i) => { x.style.opacity = ''; x.animate([{ transform: 'translateY(10px)', opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: dur(320), delay: dur(i * 120), fill: 'backwards' }); });
     }
     void card;
@@ -947,3 +1032,8 @@ function shiftPreview(slots, at, cols) {
   for (let j = at + 1; j < base + cols; j++) if (s[j] == null) { for (let k = j; k > at; k--) s[k] = s[k - 1]; s[at] = null; return s; }
   return slots;
 }
+// geometry <-> rect, and the small stable rotations of tiles lying on the felt
+function rectGeo(r, rot = 0) { return r ? { cx: r.left + r.width / 2, cy: r.top + r.height / 2, w: r.width, h: r.height, rot } : null; }
+function geoRect(g) { return g ? { left: g.cx - g.w / 2, top: g.cy - g.h / 2, width: g.w, height: g.h } : null; }
+function tileRot(id) { return (((id * 37 + 11) % 13) - 6) * 0.55; }              // -3.3° … 3.3°, the same for a tile every time
+function layerRot(p, i) { return ((((p * 7 + i * 5) % 9) - 4) * 0.8); }

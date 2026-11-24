@@ -78,6 +78,7 @@ export default {
   'table.takeHere': 'al',
   'table.pile': 'Ortadaki deste: taş çek',
   'table.okey': 'okey',
+  'table.okeyRibbon': 'OKEY',
   'table.indicator': 'gösterge',
   'table.sortRuns': 'Seri diz',
   'table.sortPairs': 'Çift diz',

@@ -72,6 +72,7 @@ export default {
   'table.takeHere': 'take',
   'table.pile': 'The pile: draw a tile',
   'table.okey': 'okey',
+  'table.okeyRibbon': 'OKEY',
   'table.indicator': 'indicator',
   'table.sortRuns': 'Sort runs',
   'table.sortPairs': 'Sort pairs',

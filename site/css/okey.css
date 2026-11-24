@@ -689,3 +689,108 @@ html.noanim *,html.noanim *::before,html.noanim *::after{animation:none!importan
 .spot.empty.act .nm{color:var(--gold2);font-weight:700}
 .spot.empty.act .av{color:var(--gold2)}
 .spot.empty.act:active{transform:scale(.97)}
+
+/* =====================================================================================================
+   The kahvehane table, seen from your seat: opponents on wooden ıstakas, a real pile, stacked discards.
+   Resting offsets/rotations use the individual `translate` / `rotate` properties so `transform` stays free
+   for animations (a flight lands on the exact pose; a settle never jumps).
+   ===================================================================================================== */
+.felt{--side:88px}
+.felt.land{--side:1fr}
+/* the opponent: a leather nameplate fixed to the back of a wooden ıstaka, their tiles standing on it */
+.seat.opp{display:flex;align-items:center;gap:0;position:relative}
+.seat.opp.p2{flex-direction:column}
+.seat.opp.p3{flex-direction:row}
+.seat.opp.p1{flex-direction:row-reverse}
+.seat.opp .plate{position:relative;z-index:2;display:flex;align-items:center;gap:6px;padding:4px 10px 4px 4px;border-radius:12px;width:auto;text-align:left;
+  background:linear-gradient(180deg,#33231a,#1a110a);border:1px solid rgba(216,180,90,.55);
+  box-shadow:0 3px 8px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,230,170,.14),inset 0 -1px 0 rgba(0,0,0,.5);transition:border-color .25s,box-shadow .25s}
+.seat.opp .plate .meta{gap:2px}
+.seat.opp .nm{font-size:12px;max-width:104px;color:#f6ecd6}
+.seat.opp.p2 .plate{border-radius:12px 12px 4px 4px;margin-bottom:-2px;border-bottom-color:rgba(216,180,90,.25)}
+.seat.opp.turn .plate{border-color:#f1d48a;box-shadow:0 0 0 1.5px rgba(241,212,138,.45),0 0 20px rgba(241,212,138,.42),inset 0 1px 0 rgba(255,230,170,.2)}
+.seat.opp .av{width:36px;height:36px}
+.seat.opp .av .emo{font-size:19px}
+.ring circle{stroke-width:3.4}
+.seat.turn .ring .rbg{stroke:rgba(0,0,0,.45)}
+/* portrait: the left and right players sit sideways, their plate outside, the rack toward the middle */
+.felt:not(.land) .seat.opp.p1 .plate,.felt:not(.land) .seat.opp.p3 .plate{flex-direction:column;gap:2px;width:60px;padding:5px 3px 6px;text-align:center}
+.felt:not(.land) .seat.opp.p3 .plate{border-radius:12px 4px 4px 12px;margin-right:-2px}
+.felt:not(.land) .seat.opp.p1 .plate{border-radius:4px 12px 12px 4px;margin-left:-2px}
+.felt:not(.land) .seat.opp.p1 .nm,.felt:not(.land) .seat.opp.p3 .nm{max-width:56px;font-size:11px}
+.felt:not(.land) .seat.opp.p1 .sub,.felt:not(.land) .seat.opp.p3 .sub{flex-direction:column;gap:2px}
+/* the ıstaka: a polished wooden bar with a lip; fixed length, filled from the start */
+.orack{position:relative;flex:none;padding:3px 5px 8px;border-radius:5px 5px 6px 6px;
+  background:linear-gradient(180deg,#9b6434 0%,#7a4a22 45%,#5c3414 100%);
+  box-shadow:inset 0 1px 0 rgba(255,220,170,.45),inset 0 -1px 0 rgba(0,0,0,.4),0 4px 8px rgba(0,0,0,.45),0 1px 0 #2e1707}
+.orack::after{content:"";position:absolute;left:2px;right:2px;bottom:2px;height:5px;border-radius:3px;
+  background:linear-gradient(180deg,#c4884e,#8d5729 45%,#5e3413);box-shadow:inset 0 1px 0 rgba(255,225,180,.6),0 1px 2px rgba(0,0,0,.45)}
+.otiles{position:relative;z-index:1;display:flex;gap:1px;width:calc(var(--cap,15) * (var(--bw) + 1px) - 1px);height:calc(var(--bw) * 1.5)}
+.os{position:relative;flex:none;width:var(--bw);height:calc(var(--bw) * 1.5)}
+.os .tile{position:absolute;left:0;top:0;--tw:var(--bw)}
+.os.hid{visibility:hidden}
+.ocount{position:absolute;right:5px;bottom:-7px;z-index:2;min-width:18px;padding:2px 4px 1px;border-radius:3px;font:800 9px/1 var(--sans);text-align:center;color:#3a2600;
+  background:linear-gradient(#f3dc98,#b88a35);box-shadow:inset 0 1px 0 rgba(255,255,255,.55),0 1px 2px rgba(0,0,0,.55);text-shadow:0 1px 0 rgba(255,240,200,.6)}
+.ocount:empty{display:none}
+.felt:not(.land) .seat.opp:is(.p1,.p3) .orack{padding:5px 3px}
+.felt:not(.land) .seat.opp.p3 .orack{padding-right:9px;border-radius:5px 6px 6px 5px}
+.felt:not(.land) .seat.opp.p1 .orack{padding-left:9px;border-radius:6px 5px 5px 6px}
+.felt:not(.land) .seat.opp:is(.p1,.p3) .orack::after{top:2px;bottom:2px;left:auto;right:2px;width:5px;height:auto;background:linear-gradient(90deg,#c4884e,#8d5729 45%,#5e3413)}
+.felt:not(.land) .seat.opp.p1 .orack::after{left:2px;right:auto;background:linear-gradient(270deg,#c4884e,#8d5729 45%,#5e3413)}
+.felt:not(.land) .seat.opp:is(.p1,.p3) .otiles{flex-direction:column;width:calc(var(--bw) * 1.5);height:calc(var(--cap,15) * (var(--bw) + 1px) - 1px)}
+.felt:not(.land) .seat.opp:is(.p1,.p3) .os{width:calc(var(--bw) * 1.5);height:var(--bw)}
+.felt:not(.land) .seat.opp:is(.p1,.p3) .os .tile{left:50%;top:50%;translate:-50% -50%;rotate:90deg}
+.felt:not(.land) .seat.opp.p3 .os .tile{rotate:-90deg}
+.felt:not(.land) .seat.opp:is(.p1,.p3) .ocount{right:auto;bottom:-8px;left:50%;translate:-50% 0}
+/* landscape: everyone's rack lies along their edge, the plate beside it */
+.felt.land .seat.opp.p2{flex-direction:row;gap:0}
+.felt.land .seat.opp.p2 .plate{border-radius:12px 4px 4px 12px;margin:0 -2px 0 0}
+.felt.land .seat.opp:is(.p1,.p3){flex-direction:column;align-items:center}
+.felt.land .seat.opp:is(.p1,.p3) .plate{margin-bottom:-2px;border-radius:12px 12px 4px 4px}
+.mrack{display:none}
+
+/* discard stacks: a few tiles of depth, the top one face up with its own slight angle; empty = a spot printed on the felt */
+.dstack{border:0!important;border-radius:calc(var(--dw) * .14)}
+.ds:not(.empty) .dstack::before{display:none}
+.dstack .dl,.dstack .dtop{position:absolute;left:0;top:0;width:var(--dw);height:calc(var(--dw) * 1.5);--tw:var(--dw);translate:calc(var(--i) * .5px) calc(var(--i) * -1.8px);rotate:var(--r);transform:none}
+.dstack .dtop.tile{top:0}
+.dstack .dl{border-radius:calc(var(--dw) * .14);background:linear-gradient(168deg,#f4ebd2,#d8c79e);box-shadow:inset 0 1px 0 rgba(255,255,255,.8),0 1px 0 #b9a273,0 2px 3px rgba(0,0,0,.35)}
+.ds.empty .dstack{background:radial-gradient(ellipse at 50% 40%,rgba(0,0,0,.05),rgba(0,0,0,.16));box-shadow:inset 0 1px 3px rgba(0,0,0,.32),0 1px 0 rgba(255,255,255,.06)}
+.ds.empty .dstack::after{content:"";position:absolute;left:50%;top:50%;width:26%;aspect-ratio:1;translate:-50% -50%;rotate:45deg;border:1px solid rgba(241,212,138,.16);border-radius:2px}
+.dn{top:-10px;right:-8px}
+.dlbl{font-size:11px;margin-top:3px}
+
+/* the closed pile: a block of tiles; its top sinks as it empties; an engraved count plate on the front */
+.pile{--pt:16px;--maxT:18px}
+.pstack,.pcount{display:none}
+.pblock{position:relative;display:block;width:var(--dw);height:calc(var(--dw) * 1.5 + var(--maxT) + 2px)}
+.pside{position:absolute;left:0;right:0;bottom:0;height:calc(var(--pt) + var(--dw) * .2);border-radius:0 0 calc(var(--dw) * .14) calc(var(--dw) * .14);
+  background:repeating-linear-gradient(180deg,#f1e6c6 0 1.25px,#bba374 1.25px 2.2px);box-shadow:inset 1px 0 0 rgba(255,255,255,.4),inset -1px 0 0 rgba(0,0,0,.12),0 4px 7px rgba(0,0,0,.45);transition:height .28s ease}
+.ptop{position:absolute;left:0;top:calc(var(--maxT) - var(--pt));--tw:var(--dw);transition:top .28s ease}
+.pplate{position:absolute;left:50%;bottom:-8px;z-index:2;translate:-50% 0;min-width:24px;padding:3px 6px 2px;border-radius:4px;font:800 10.5px/1 var(--sans);text-align:center;color:#3a2600;font-variant-numeric:tabular-nums;
+  background:linear-gradient(#f3dc98,#b88a35);box-shadow:inset 0 1px 0 rgba(255,255,255,.6),0 1px 3px rgba(0,0,0,.55);text-shadow:0 1px 0 rgba(255,240,200,.6)}
+.pile.low .pplate{background:linear-gradient(#ffd0a8,#d2874e)}
+.pile.none .pblock{opacity:.25}
+.felt.can-draw .ptop{animation:beckon 1.6s ease-in-out infinite}
+.pile.lift .ptop{translate:0 -6px}
+.pile.shuffling .pblock{animation:shuf .48s ease-in-out}
+/* the indicator lies face up beside the pile, nearly straight; the okey wears a gold ribbon */
+.indt .tile{transform:none;rotate:-2.5deg}
+.okeyis{position:relative;display:flex;align-items:center;gap:3px;padding:0;background:none;border-radius:0}
+.okeyis .arrow{font:700 20px/1 var(--serif);color:var(--gold2);opacity:.8;margin-top:-6px}
+.okt{position:relative}
+.okt .tile{--tw:calc(var(--dw) * .72);box-shadow:0 0 0 1.5px #ffe39a,0 0 14px rgba(255,205,100,.55),0 2px 0 #ae9762,0 3px 6px rgba(0,0,0,.4)}
+.ribbon{position:absolute;left:50%;bottom:-6px;translate:-50% 0;z-index:2;padding:2px 5px 2px;font:900 7.5px/1 var(--sans);letter-spacing:1px;color:#3a2600;white-space:nowrap;
+  background:linear-gradient(#f8e2a2,#c79b3c);border-radius:1px;box-shadow:0 1px 3px rgba(0,0,0,.5)}
+.ribbon::before,.ribbon::after{content:"";position:absolute;top:2px;border:5px solid #9c7426;z-index:-1}
+.ribbon::before{left:-6px;border-left-color:transparent}
+.ribbon::after{right:-6px;border-right-color:transparent}
+.felt:not(.v101) .center{grid-template-columns:auto auto auto;grid-template-areas:"pile ind ok";column-gap:clamp(10px,3.5vw,22px)}
+.felt:not(.v101) .center .okeyis{justify-self:start}
+.ind small{margin-top:2px}
+.cring{display:none}
+.dstack .dl.face{box-shadow:inset 0 1px 0 rgba(255,255,255,.8),0 1px 0 #b9a273,0 2px 3px rgba(0,0,0,.35)}
+.felt.can-discard.picked .fz{border:0!important;box-shadow:inset 0 0 0 1.5px rgba(241,212,138,.28),0 0 22px rgba(241,212,138,.12);opacity:.85}
+.felt.finishing .fz{border:0!important;box-shadow:inset 0 0 0 2px rgba(241,212,138,.55),0 0 26px rgba(241,212,138,.2)}
+.seat.opp{pointer-events:none}
+.melds{width:0;min-width:100%}   /* the board fills the middle but never widens it (side racks keep their room) */
