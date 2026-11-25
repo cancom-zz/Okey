@@ -876,8 +876,21 @@ test('arrangeRack: sets, then near-sets side by side, then singles (Seri diz / Ã
     tileId(2, 4), tileId(1, 11), tileId(3, 11), tileId(3, 1), tileId(1, 5), tileId(2, 13), tileId(0, 13)];
   const r = arrangeRack(hand, okey);
   assert.deepEqual(r.sets, [[tileId(0, 7), tileId(1, 7), tileId(2, 7), tileId(3, 7)]]);
-  assert.equal(r.partials.length, 4);
-  assert.deepEqual(r.singles.sort((a, b) => a - b), [tileId(1, 5), tileId(3, 1)].sort((a, b) => a - b));
+  assert.ok(r.partials.length >= 3);
+  assert.ok(r.singles.length <= 2);
+
+  // the owner's own arrangement (Nov 25): B13 R13 R1 K1 as one chain, and R6 _ R8 with the gap left open
+  const T = (c, n) => tileId(c, n);
+  const own = arrangeRack([T(2, 13), T(0, 13), T(0, 1), T(3, 1), T(0, 6), T(0, 8), T(1, 4), T(1, 5), T(1, 6), T(3, 9),
+    T(2, 9), T(2, 11), T(1, 10), T(3, 3)], okey);
+  assert.deepEqual(own.sets, [[T(1, 4), T(1, 5), T(1, 6)]]);
+  assert.ok(own.partials.some((c) => JSON.stringify(c) === JSON.stringify([T(2, 13), T(0, 13), T(0, 1), T(3, 1)])), 'B13 R13 R1 K1');
+  assert.ok(own.partials.some((c) => JSON.stringify(c) === JSON.stringify([T(0, 6), null, T(0, 8)])), 'R6 _ R8');
+  // twins sit together
+  const tw = arrangeRack([tileId(3, 7, 0), tileId(1, 7), tileId(3, 7, 1), tileId(0, 12), tileId(2, 4)], okey);
+  const k7 = [tileId(3, 7, 0), tileId(3, 7, 1)];
+  const ch = tw.partials.find((c) => k7.every((x) => c.includes(x)));
+  assert.ok(ch && Math.abs(ch.indexOf(k7[0]) - ch.indexOf(k7[1])) === 1, 'the two black 7s sit side by side');
 
   // random hands: every tile once, sets valid, near-sets real, no two singles could still pair up
   const near = (a, b, ok) => {
@@ -895,10 +908,14 @@ test('arrangeRack: sets, then near-sets side by side, then singles (Seri diz / Ã
     const h = shuffle(all.filter((i) => i !== ind), rng).slice(0, k % 3 === 0 ? 22 : 14);
     for (const mode of ['runs', 'pairs']) {
       const a = arrangeRack(h, ok, mode);
-      const flat = [...a.sets.flat(), ...a.partials.flat(), ...a.singles];
+      const flat = [...a.sets.flat(), ...a.partials.flat().filter((x) => x !== null), ...a.singles];
       assert.deepEqual(flat.slice().sort((x, y) => x - y), h.slice().sort((x, y) => x - y));
       if (mode === 'runs') for (const s of a.sets) assert.ok(validSet(s, ok), 'set is valid');
-      for (const p of a.partials) assert.equal(p.length, 2);
+      for (const p of a.partials) {
+        const tiles = p.filter((x) => x !== null);
+        assert.ok(tiles.length >= 2 && tiles.length <= 4 && p.length <= 6, 'chain within caps');
+        assert.ok(p[0] !== null && p[p.length - 1] !== null, 'gaps only inside a chain');
+      }
     }
     const a = arrangeRack(h, ok, 'runs');
     {

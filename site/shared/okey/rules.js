@@ -324,6 +324,7 @@ export function arrange(ids, okey, mode = 'runs') {
 // tile (e.g. 7s)... auto sort intelligently with all outs next to each other".
 //
 // arrangeRack(ids, okey, mode = 'runs' | 'pairs') -> { sets, partials, singles }
+//   partials are chains of related tiles and may contain null: an empty slot where a missing tile goes.
 //   'runs'  : sets maximise tiles in runs AND groups; ties are broken by the better leftovers.
 //   'pairs' : identical pairs (an okey pairs with anything) first.
 // Near-set weights = how many different faces would complete it (each face has 2 copies):
@@ -333,19 +334,24 @@ export function arrange(ids, okey, mode = 'runs') {
 
 const LINK = { adj: 2, edge: 1, gap: 1, group: 2, twin: 0.5 };
 
-function linkScore(a, b, okey) {
+function linkKind(a, b, okey) {
   const fa = faceOf(a, okey);
   const fb = faceOf(b, okey);
-  if (fa.wild || fb.wild) return 0;
-  if (fa.color !== fb.color) return fa.num === fb.num ? LINK.group : 0;
-  if (fa.num === fb.num) return LINK.twin;
+  if (fa.wild || fb.wild) return null;
+  if (fa.color !== fb.color) return fa.num === fb.num ? 'group' : null;
+  if (fa.num === fb.num) return 'twin';
   const lo = Math.min(fa.num, fb.num);
   const hi = Math.max(fa.num, fb.num);
-  if (hi - lo === 1) return lo === 1 ? LINK.edge : LINK.adj; // 1-2 can only grow to 3
-  if (hi - lo === 2) return LINK.gap;
-  if (lo === 1 && hi === 13) return LINK.edge; // 13-1, grows only to 12-13-1
-  if (lo === 1 && hi === 12) return LINK.gap; // 12-_-1
-  return 0;
+  if (hi - lo === 1) return lo === 1 ? 'edge' : 'adj'; // 1-2 can only grow to 3
+  if (hi - lo === 2) return 'gap';
+  if (lo === 1 && hi === 13) return 'edge'; // 13-1, grows only to 12-13-1
+  if (lo === 1 && hi === 12) return 'gap'; // 12-_-1
+  return null;
+}
+
+function linkScore(a, b, okey) {
+  const k = linkKind(a, b, okey);
+  return k ? LINK[k] : 0;
 }
 
 // Best set of disjoint two-tile near-sets (max total weight). Exact for up to 16 tiles, greedy above.
@@ -379,16 +385,135 @@ function bestLinks(ids, okey) {
   return best(0).links;
 }
 
+// Chain the leftovers the way players do (owner, Nov 25): related tiles sit side by side so a new tile's
+// place is obvious. B13 R13 R1 K1 (13s, then 13-1 in red, then 1s), and a gap is left where the missing
+// tile of a one-gap run would go: R6 _ R8 (null = an empty rack slot). Each connected cluster of near-set
+// links is ordered as the path with the fewest breaks, then the strongest links; runs read upward.
+const CHAIN_TILES = 4; // a chain is at most 4 tiles ...
+const CHAIN_SLOTS = 6; // ... and 6 rack slots with its gaps, so it reads at a glance and fits a tier
+const chainLink = (a, b, okey) => {
+  const k = linkKind(a, b, okey);
+  if (k === 'twin') return 2.5; // twins sit side by side (K7 K7 Y7, not K7 Y7 K7)
+  if (k === 'gap') return 0.75; // a one-gap is the weakest link: B13 R13 R1 K1 beats R13 R1 K1 _ K3
+  return k ? LINK[k] : 0;
+};
+const gapSlot = (a, b, okey) => {
+  const fa = faceOf(a, okey);
+  const fb = faceOf(b, okey);
+  const d = (fb.num - fa.num + 13) % 13;
+  return fa.color === fb.color && (d === 2 || d === 11) ? 1 : 0;
+};
+
+// Best split of one ordering into chains (contiguous, every step linked, within the size caps).
+function splitChains(perm, w, gaps) {
+  const n = perm.length;
+  const best = Array(n + 1).fill(null);
+  best[0] = { s: 0, cuts: [] };
+  for (let end = 1; end <= n; end++) {
+    let slots = 0;
+    let score = 0;
+    for (let start = end - 1; start >= 0 && end - start <= CHAIN_TILES; start--) {
+      if (start < end - 1) {
+        const x = w[perm[start]][perm[start + 1]];
+        if (x <= 0) break;
+        score += x;
+        slots += gaps[perm[start]][perm[start + 1]];
+      }
+      if (end - start + slots > CHAIN_SLOTS) break;
+      const prev = best[start];
+      if (prev && (!best[end] || prev.s + score > best[end].s)) best[end] = { s: prev.s + score, cuts: [...prev.cuts, start] };
+    }
+  }
+  const { s, cuts } = best[n];
+  return { s, chains: cuts.map((c, k) => perm.slice(c, k + 1 < cuts.length ? cuts[k + 1] : n)) };
+}
+
+function chainOrder(ids, okey) {
+  const n = ids.length;
+  const w = ids.map((a) => ids.map((b) => (a === b ? 0 : chainLink(a, b, okey))));
+  const gaps = ids.map((a) => ids.map((b) => (a === b ? 0 : gapSlot(a, b, okey))));
+  let best = null;
+  const consider = (perm) => {
+    const r = splitChains(perm, w, gaps);
+    if (!best || r.s > best.s || (r.s === best.s && r.chains.length < best.chains.length)) best = r;
+  };
+  if (n <= 8) {
+    const used = Array(n).fill(false);
+    const perm = [];
+    const go = () => {
+      if (perm.length === n) return consider(perm);
+      for (let i = 0; i < n; i++) {
+        if (used[i]) continue;
+        used[i] = true; perm.push(i); go(); perm.pop(); used[i] = false;
+      }
+    };
+    go();
+  } else {
+    // large cluster: greedy walk from a low-degree tile along the strongest unused link
+    const deg = w.map((r) => r.filter((x) => x > 0).length);
+    const left = new Set(ids.keys());
+    const perm = [];
+    while (left.size) {
+      let cur = [...left].sort((a, b) => deg[a] - deg[b] || a - b)[0];
+      for (;;) {
+        perm.push(cur); left.delete(cur);
+        const nx = [...left].filter((j) => w[cur][j] > 0).sort((a, b) => w[cur][b] - w[cur][a] || a - b)[0];
+        if (nx === undefined) break;
+        cur = nx;
+      }
+    }
+    consider(perm);
+  }
+  return best.chains.map((c) => c.map((i) => ids[i]));
+}
+
+// +1 when b follows a upward in one colour (incl. 13 -> 1), -1 when downward, 0 otherwise
+function runDir(a, b, okey) {
+  const fa = faceOf(a, okey);
+  const fb = faceOf(b, okey);
+  if (fa.color !== fb.color || fa.num === fb.num) return 0;
+  const up = (fb.num - fa.num + 13) % 13; // 1 or 2 steps upward, wrapping 13 -> 1
+  if (up === 1 || up === 2) return 1;
+  if (up === 12 || up === 11) return -1;
+  return 0;
+}
+
+// Orient a chain so runs read upward, then insert an empty slot for each one-gap (R6 _ R8, R12 _ R1).
+function layChain(chain, okey) {
+  const cmp = byFace(okey);
+  const dir = chain.slice(1).reduce((s, id, k) => s + runDir(chain[k], id, okey), 0);
+  if (dir < 0 || (dir === 0 && chain.length > 1 && cmp(chain[chain.length - 1], chain[0]) < 0)) chain = chain.slice().reverse();
+  const out = [chain[0]];
+  for (let k = 1; k < chain.length; k++) {
+    const fa = faceOf(chain[k - 1], okey);
+    const fb = faceOf(chain[k], okey);
+    const d = (fb.num - fa.num + 13) % 13;
+    if (fa.color === fb.color && (d === 2 || d === 11)) out.push(null); // R6 _ R8, or read downward K8 _ K6
+    out.push(chain[k]);
+  }
+  return out;
+}
+
 function leftoverParts(left, okey) {
   const cmp = byFace(okey);
   const real = left.filter((id) => !faceOf(id, okey).wild);
   const wild = left.filter((id) => faceOf(id, okey).wild);
-  const links = bestLinks(real, okey);
-  const inLink = new Set(links.flat());
-  const partials = links.map(([i, j]) => [real[i], real[j]].sort(cmp)).sort((a, b) => cmp(a[0], b[0]));
-  const singles = [...real.filter((_, i) => !inLink.has(i)).sort(cmp), ...wild];
-  const score = links.reduce((s, [i, j]) => s + linkScore(real[i], real[j], okey), 0);
-  return { partials, singles, score };
+  // connected clusters of near-set links
+  const parent = real.map((_, i) => i);
+  const find = (i) => (parent[i] === i ? i : (parent[i] = find(parent[i])));
+  for (let i = 0; i < real.length; i++) for (let j = i + 1; j < real.length; j++) {
+    if (linkScore(real[i], real[j], okey) > 0) parent[find(i)] = find(j);
+  }
+  const clusters = new Map();
+  real.forEach((id, i) => { const r = find(i); if (!clusters.has(r)) clusters.set(r, []); clusters.get(r).push(id); });
+  const partials = [];
+  const singles = [];
+  for (const ids of clusters.values()) {
+    for (const c of chainOrder(ids.sort(cmp), okey)) (c.length > 1 ? partials.push(layChain(c, okey)) : singles.push(c[0]));
+  }
+  partials.sort((a, b) => cmp(a.find((x) => x !== null), b.find((x) => x !== null)));
+  const score = bestLinks(real, okey).reduce((s, [i, j]) => s + linkScore(real[i], real[j], okey), 0);
+  return { partials, singles: [...singles.sort(cmp), ...wild], score };
 }
 
 export function arrangeRack(ids, okey, mode = 'runs') {
