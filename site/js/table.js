@@ -872,13 +872,9 @@ export class TableScreen {
       this.dealing = false;
       setSkip(false);
     };
-    console.log('DBG deal start', hand.length, JSON.stringify(this.rack.slots), JSON.stringify(sorted), [...this.rack.els.values()].slice(0,3).map(e=>e.style.transform+e.className).join(' / '), this.rack.box.isConnected);
     if (reduced()) { done(); return; }
     try { await this.dealShow(ev, next, { me, okey, hand, want, sorted, board, pileEl }); } catch (e) { console.error(e); }
-    console.log('DBG deal shown');
     done();
-    console.log('DBG deal done', this.rack.hidden.size, [...this.rack.els.values()].slice(0,3).map(e=>e.className).join(' / '));
-    setTimeout(() => console.log('DBG later', this.rack.hidden.size, [...this.rack.els.values()].slice(0,3).map(e=>e.className).join(' / ')), 300);
     pulse($('.ind', this.root), 'glow', 1400);
   }
 
@@ -918,7 +914,6 @@ export class TableScreen {
         { transform: `translate(0,0) rotate(${(i % 3) - 1}deg)`, offset: 1 }], { duration: dur(720), delay: dur(i * 6), easing: 'linear', fill: 'both' }).finished.catch(() => {});
     });
     await Promise.all(swirl);
-    console.log('DBG await Promise.all(swirl);');
     stacks.forEach(st => { st.style.opacity = ''; });
     board.querySelectorAll('.loose').forEach(x => x.remove());
     sfx('stack');
@@ -943,7 +938,6 @@ export class TableScreen {
     });
     setTimeout(() => sfx('dice'), dur(170));
     await Promise.all(dice);
-    console.log('DBG await Promise.all(dice);');
     const pick = (v[0] + v[1] - 1) % N, pst = stacks[pick];
     pst.classList.add('pick');
     await wait(260);
@@ -999,7 +993,6 @@ export class TableScreen {
       });
     }
     await Promise.all(flights);
-    console.log('DBG await Promise.all(flights);');
 
     // 5. what is left stays in the middle: the stacks slide together into the draw pile
     this.setPile(ev.pileCount);
@@ -1010,7 +1003,6 @@ export class TableScreen {
     // 6. meanwhile my tiles turn face up, one after another, then slide into order
     const flips = hand.map((id, i) => wait(i * (this.is101 ? 14 : 17)).then(() => this.rack.turnUp(id, dur(200)).then(() => { if (i % 4 === 0) sfx('tick'); })));
     await Promise.all([...toPile, ...flips]);
-    console.log('DBG await Promise.all([...toPile, ');
     $('#pile', this.root).classList.remove('dealing');
     board.querySelectorAll('.dstk').forEach(x => x.remove());
     await wait(120);

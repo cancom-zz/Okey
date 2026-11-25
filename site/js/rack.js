@@ -353,22 +353,4 @@ export class Rack {
     this.opts.onSelect && this.opts.onSelect(null);
   }
   clearSelection() { if (this.selected != null) { this.selected = null; this.render(); } }
-
-  // The deal: tiles land into their slots one by one.
-  async dealIn(order, from, okey) {
-    const box = this.box;
-    void box; void from; void okey;
-    if (reduced()) { this.render(true); return; }
-    const step = dur(55);
-    const ids = order.filter(id => this.els.has(id));
-    ids.forEach(id => { const el = this.els.get(id); el.style.opacity = '0'; });
-    for (const id of ids) {
-      const el = this.els.get(id); if (!el) continue;
-      el.style.opacity = '';
-      el.animate([{ transform: el.style.transform + ' translateY(-14px) rotateX(70deg)', opacity: 0 }, { transform: el.style.transform, opacity: 1 }],
-        { duration: dur(220), easing: 'cubic-bezier(.2,.9,.3,1.2)' });
-      if (ids.indexOf(id) % 3 === 0) sfx('tick');
-      await new Promise(r => setTimeout(r, step));
-    }
-  }
 }
