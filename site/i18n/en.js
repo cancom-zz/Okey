@@ -182,10 +182,10 @@ export default {
   'settings.lang': 'Language',
   'settings.sound': 'Sound',
   'settings.speed': 'Animations',
-  'settings.felt': 'Felt colour',
+  'settings.felt': 'Table cloth',
   'settings.profile': 'Profile',
   'speed.slow': 'Slow', 'speed.normal': 'Normal', 'speed.fast': 'Fast',
-  'felt.green': 'Green', 'felt.burgundy': 'Burgundy', 'felt.blue': 'Blue',
+  'felt.green': 'Green', 'felt.burgundy': 'Burgundy', 'felt.blue': 'Navy',
   'profile.welcome': 'Welcome!',
   'profile.title': 'Profile',
   'profile.intro': 'Pick the name and icon others see at the table. No account, no password: it stays on this device.',
@@ -417,7 +417,7 @@ export default {
   "a11y.c2": "blue",
   "a11y.c3": "black",
   "rules.keys": "Keyboard: ← → ↑ ↓ pick a tile · Enter discard · D draw from the pile · L take the left tile · Esc let go",
-  // ---- client polish 2 (reversed okey, forgotten gösterge, slam finishes, cloths) ----
+  // ---- client polish 2 (reversed okey, forgotten gösterge, slam finishes) ----
   "settings.reverseOkey": "Turn the okey upside down",
   "settings.okeyGuard": "Ask before discarding an okey",
   "guard.title": "That's your okey!",
@@ -428,8 +428,4 @@ export default {
   "slam.okey": "OKEY SLAM!",
   "slam.pairs": "PAIRS OUT!",
   "slam.both": "PAIRS + OKEY!",
-  "settings.cloth": "Table cloth",
-  "cloth.green": "Green",
-  "cloth.bordo": "Burgundy",
-  "cloth.navy": "Navy",
 };

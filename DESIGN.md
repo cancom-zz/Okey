@@ -461,10 +461,16 @@ clamps every bot, custom ones included: memory ≤ 0.9, decay ≥ 0.005, lookahe
   live outs and loose tiles by live neighbours (dead waits are dropped); 3 = plus one draw ahead: expected gain
   of the next pile draw for the discards close to the best and for the take-or-draw choice; 4 = the expert's
   model (below).
-- `defense`: penalty for discarding what the next player (seat + 1, the only one who can take it) seems to
-  collect, inferred from its remembered pickups (neighbours in a run, same number in a group); a small bonus
-  for faces it passed on or threw; grows as the pile shrinks and as it picks up more; capped so it never
-  makes a bot break a complete set.
+- `defense`: how much it avoids feeding the next player (seat + 1, the only one who can take its discard).
+  The danger of a tile is first how likely an unknown hand can use it: the live copies of its run
+  neighbours and of the same number in other colours, times the share of unseen tiles that player holds
+  (so tiles with dead neighbours, group-dead numbers and end tiles are safe, middle tiles less so); then
+  what that player did: tiles next to what they picked up from us are dangerous, the same face as something
+  they threw or passed on is safe, and (full readers) neighbours of their throws and colours / numbers they
+  keep dumping are safer. It weighs more as the pile shrinks, as they take discards, and (101) when they are
+  close to going out. Danger is in hand-value units × `defense` × 2, softly capped at 1.5 (never worth
+  breaking a complete set); for Uzman it trades against tile efficiency (it can outweigh a few tiles of
+  acceptance, never a missing tile).
 - `pairsBias`: weight of the pairs route against the sets route.
 - `blunder`: chance of a plausible slip: the best discard that is actually worse but within 1 point of value
   (breaks a partial, never a complete set while a loose tile exists, never an okey); half as often, missing a
@@ -499,8 +505,16 @@ humans and bots alike, so there is no collusion):
 - 101: the same reading on its işlek-safe discards, and defense grows when the next player has opened and is
   close to going out (few tiles left).
 
-Code: `defense.js` (`dangerFn`, `readPrevious`, `tellPenalty`, `bluffPick`). Test: test/taslamak.test.mjs
-(the next player picked R5 and R6 → readers stop feeding R7; bluff rate bounded and seeded).
+Code: `defense.js` (`dangerFn`, `readPrevious`, `tellPenalty`, `bluffPick`). Tests: test/taslamak.test.mjs
+(the next player picked R5 and R6 → readers stop feeding R7; bluff rate bounded and seeded) and
+test/gift.test.mjs (paired: the same bot on the same view with reading off; where reading changes the
+discard, the next player's true hand gains clearly less).
+
+How much this can help is limited by what is public. With test/giftsim.mjs (how much a discard improves the
+next player's true hand, vs a random discard from the same hand), the best public estimate picked over ALL
+tiles of a hand (ignoring one's own hand entirely) reaches about 0.78 of random; picked among the loose
+tiles a player would actually throw, about 0.93 (a random loose tile is 1.06: loose tiles are exactly the
+ones others can use). Before this model defense was inert (every level ≈ 1.0, Uzman 1.04-1.07).
 
 **Table talk (emotes).** Bots now and then use the preset emotes like people at a kahvehane table
 (`chatter.js`, driven by `host.js` `botTalk` / `botHurry` through the same emote path and rate limit as

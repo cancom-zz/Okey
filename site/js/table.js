@@ -8,7 +8,7 @@ import { sfx, buzz } from './sound.js';
 import { Rack, layoutFromGroups } from './rack.js';
 import { tileHTML, tileClass, tileInner, tileLabel, faceHTML, okeyFace, color, num, finishCheck, arrange, loadEngine, getEngine, isOkey } from './tiles.js';
 import { load101, rules101, rackOpening, bestLayout, boardHTML, story101, rows101 } from './v101.js';
-import { flyTile, flipOver, settle, wait, dur, reduced, shake, pulse, fly, geomOf, land, setSkip, skipped, sleep } from './anim.js';
+import { flyTile, flipOver, settle, wait, dur, reduced, shake, pulse, fly, geomOf, land, setSkip, skipped, sleep, nextFrame } from './anim.js';
 import { storyOf, deltasHTML, handGroupsHTML, podiumHTML } from './result.js';
 import { confirmSheet } from './sheets.js';
 import { maybeGuide, placeGuide, closeGuide, advanceGuide } from './guide.js';
@@ -44,7 +44,7 @@ export class TableScreen {
     const ds = p => `<div class="ds d${p}" data-p="${p}"><div class="dstack"></div><span class="dn"></span>${p === 0 ? `<span class="dlbl">${t('table.discardHere')}</span>` : p === 3 ? `<span class="dlbl">${t('table.takeHere')}</span>` : ''}</div>`;
     this.root.innerHTML = `<section class="tbl" id="tbl">
       <div class="felt" id="felt">
-        <div class="placard" aria-hidden="true"></div>
+        <div class="placard" aria-hidden="true"></div><div class="cloth" aria-hidden="true"></div><div class="tea" aria-hidden="true"></div>
         ${seat(2)}${seat(3)}${seat(1)}
         ${ds(2)}${ds(1)}${ds(3)}${ds(0)}
         <div class="center">
@@ -737,7 +737,7 @@ export class TableScreen {
       case 'discard': {
         const p = this.pos(ev.seat), d = this.disp;
         const st = d.disc[ev.seat];
-        const forgot = ev.seat === me ? this.forgotCopy(this.view) : null;   // my first turn ends without showing the gösterge I held
+        const forgot = ev.seat === me ? this.forgotCopy(this.view) : null;
         if (ev.seat === me && this.pendingDiscard === ev.tile) {
           this.pendingDiscard = null;
           d.count[me]--; st.top = ev.tile; st.count++;
@@ -876,7 +876,11 @@ export class TableScreen {
       setSkip(false);
     };
     if (reduced()) { done(); return; }
+    // the first paint of the new round (and, on a fresh page, the boot) settles before anything moves
+    await nextFrame(); await new Promise(r => (globalThis.requestIdleCallback ? requestIdleCallback(() => r(), { timeout: 280 }) : setTimeout(r, 60)));
+    const t0 = performance.now();
     try { await this.dealShow(ev, next, { me, okey, hand, want, sorted, board, pileEl }); } catch (e) { console.error(e); }
+    if (globalThis.__okeyFlights) globalThis.__okeyFlights.push([t0, performance.now()]);   // test hook (perf.pw.mjs): the deal counts as motion
     done();
     pulse($('.ind', this.root), 'glow', 1400);
   }
@@ -905,19 +909,21 @@ export class TableScreen {
     };
 
     // 1. the swirl: tile backs circle on the cloth, then each settles where a stack will stand
-    sfx('shuffle');
-    const stacks = counts.map((n, i) => { const p = spot(i), el = mkStack(p.left, p.top, n); el.style.opacity = '0'; return el; });
+    setTimeout(() => sfx('shuffle'), 30);   // its own task, not in the frame that builds the board
+    const stacks = counts.map((n, i) => { const p = spot(i), el = mkStack(p.left, p.top, n); el.style.visibility = 'hidden'; return el; });
+    const frag = document.createDocumentFragment();
     const swirl = stacks.map((st, i) => {
       const g = topG(st), el = document.createElement('div');
       el.className = 'tile back loose'; el.style.cssText = `--tw:${ps}px;left:${g.cx - ps / 2}px;top:${g.cy - ps * 0.75}px`;
-      board.appendChild(el);
+      frag.appendChild(el);
       const a0 = Math.random() * Math.PI * 2, rx = W * (0.22 + Math.random() * 0.2), ry = H * (0.16 + Math.random() * 0.16), r0 = Math.random() * 360;
       const at = k => { const a = a0 + k * 1.35; return `translate(${cx + Math.cos(a) * rx * (1 - k * 0.12) - g.cx}px,${cy + Math.sin(a) * ry * (1 - k * 0.12) - g.cy}px) rotate(${r0 + k * 95}deg)`; };
-      return el.animate([{ transform: at(0), opacity: 0, offset: 0 }, { transform: at(0.4), opacity: 1, offset: 0.12 }, { transform: at(1), offset: 0.42 }, { transform: at(1.7), offset: 0.68, easing: 'cubic-bezier(.3,.6,.3,1)' },
-        { transform: `translate(0,0) rotate(${(i % 3) - 1}deg)`, offset: 1 }], { duration: dur(720), delay: dur(i * 6), easing: 'linear', fill: 'both' }).finished.catch(() => {});
+      return [el, [{ transform: at(0), opacity: 0, offset: 0 }, { transform: at(0.4), opacity: 1, offset: 0.12 }, { transform: at(1), offset: 0.42 }, { transform: at(1.7), offset: 0.68, easing: 'cubic-bezier(.3,.6,.3,1)' },
+        { transform: `translate(0,0) rotate(${(i % 3) - 1}deg)`, offset: 1 }], { duration: dur(720), delay: dur(i * 6), easing: 'linear', fill: 'both' }];
     });
-    await Promise.all(swirl);
-    stacks.forEach(st => { st.style.opacity = ''; });
+    board.appendChild(frag);
+    await Promise.all(swirl.map(([el, kf, o]) => el.animate(kf, o).finished.catch(() => {})));
+    stacks.forEach(st => { st.style.visibility = ''; });
     board.querySelectorAll('.loose').forEach(x => x.remove());
     sfx('stack');
 
@@ -969,6 +975,8 @@ export class TableScreen {
     const given = [0, 0, 0, 0], flights = [], gap = this.is101 ? 52 : 76;
     let k = 0;
     const rounds = Math.max(...packets.map(x => x.length));
+    // every target is measured first (reads), then the stacks move (writes): no layout thrash mid-deal
+    const plan = [];
     for (let rd = 0; rd < rounds; rd++) {
       order.forEach((seat, oi) => {
         const n = packets[oi][rd]; if (!n) return;
@@ -978,23 +986,26 @@ export class TableScreen {
         let to;
         if (ids) to = rectGeo(this.rack.slotRect(this.rack.slotOf(ids[Math.floor((ids.length - 1) / 2)])));
         else if (oslots && oslots.length) to = this.oppGeom(p, oslots[Math.floor((oslots.length - 1) / 2)]);
-        const chunks = take(n), delay = k++ * gap;
-        chunks.forEach(([i, m], ci) => {
-          const src = stacks[i], have = +src.style.getPropertyValue('--n');
-          let el = src;
-          if (m < have) { el = mkStack(parseFloat(src.style.left), parseFloat(src.style.top) + (m - have) * 1.35, m); src.style.setProperty('--n', have - m); }
-          else src.dataset.gone = '1';
-          if (!to) { el.remove(); return; }
-          const last = ci === chunks.length - 1;
-          flights.push(sleep(dur(delay)).then(() => sfx('slide', { level: 0.6 })).then(() => glide(el, to, 330, 0, 0.12)).then(() => {
-            el.remove();
-            if (!last) return;
-            if (ids) { this.rack.dealIn(ids, this.rack.slotOf(ids[Math.floor((ids.length - 1) / 2)])); sfx('rack', { level: 0.7 }); }
-            else { oslots.forEach(x => this.oppReveal(p, x)); sfx('clack', { level: 0.35, pitch: 1.1 }); }
-          }));
-        });
+        plan.push({ n, p, ids, oslots, to });
       });
     }
+    plan.forEach(({ n, p, ids, oslots, to }) => {
+      const chunks = take(n), delay = k++ * gap;
+      chunks.forEach(([i, m], ci) => {
+        const src = stacks[i], have = +src.style.getPropertyValue('--n');
+        let el = src;
+        if (m < have) { el = mkStack(parseFloat(src.style.left), parseFloat(src.style.top) + (m - have) * 1.35, m); src.style.setProperty('--n', have - m); }
+        else src.dataset.gone = '1';
+        if (!to) { el.remove(); return; }
+        const last = ci === chunks.length - 1;
+        flights.push(sleep(dur(delay)).then(() => sfx('slide', { level: 0.6 })).then(() => glide(el, to, 330, 0, 0.12)).then(() => {
+          el.remove();
+          if (!last) return;
+          if (ids) { this.rack.dealIn(ids, this.rack.slotOf(ids[Math.floor((ids.length - 1) / 2)])); sfx('rack', { level: 0.7 }); }
+          else { oslots.forEach(x => this.oppReveal(p, x)); sfx('clack', { level: 0.35, pitch: 1.1 }); }
+        }));
+      });
+    });
     await Promise.all(flights);
 
     // 5. what is left stays in the middle: the stacks slide together into the draw pile
@@ -1031,8 +1042,8 @@ export class TableScreen {
   // a small sad moment: the copy goes grey-blue and droops, a "wah-wah", a gentle toast
   sadMoment(id, discarded) {
     this.sadRound = this.roundKey;
-    const el = id === discarded ? this.discTop(0) : this.rack.els.get(id);
-    if (el) { el.classList.remove('sad'); void el.offsetWidth; el.classList.add('sad'); setTimeout(() => el.classList.remove('sad'), 2700); }
+    if (id === discarded) { const el = this.discTop(0); if (el) { el.classList.add('sad'); setTimeout(() => el.classList.remove('sad'), 2700); } }
+    else { this.rack.sad = id; this.rack.render(); setTimeout(() => { if (this.rack.sad === id) { this.rack.sad = null; this.rack.render(); } }, 2700); }
     sfx('wah');
     toast(esc(t('sad.forgot')), 'sad', 3200);
   }
@@ -1069,7 +1080,7 @@ export class TableScreen {
     // tier 2: an okey finish or a pairs finish slams; tier 3: pairs and an okey together slams twice
     const tier = ev.kind === 'pairs' && ev.okeyFinish ? 3 : ev.okeyFinish || ev.kind === 'pairs' ? 2 : 1;
     this.slamTier = tier > 1 ? tier : 0;
-    if (tier > 1) { try { await this.slam(ev, next, tier); } catch (e) { console.error(e); } }
+    if (tier > 1) { const t0 = performance.now(); try { await this.slam(ev, next, tier); } catch (e) { console.error(e); } if (globalThis.__okeyFlights) globalThis.__okeyFlights.push([t0, performance.now()]); }
     else sfx('settle');
     this.view = next;
     await this.showResult(true, ev);

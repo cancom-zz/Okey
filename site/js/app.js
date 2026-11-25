@@ -195,5 +195,6 @@ boot();
 // Offline + install: a network-first service worker, only on a real http(s) origin (not file://, not inside the
 // claude.ai playtest artifact or any iframe).
 if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol) && !globalThis.OKEY_PLAYTEST && window.top === window) {
-  addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+  const reg = () => navigator.serviceWorker.register('sw.js').catch(() => {});
+  if (document.readyState === 'complete') reg(); else addEventListener('load', reg);
 }

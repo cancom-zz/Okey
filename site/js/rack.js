@@ -45,6 +45,10 @@ export function layoutFromGroups(groups, cols = COLS, tiers = TIERS) {
   const s = Array(SLOTS).fill(null); groups.flat().forEach((id, i) => { s[i] = id; }); return s;
 }
 
+// the pointer's last position (one listener for the page): a landing tile under a still pointer stays calm
+const lastPt = [0, 0];
+addEventListener('pointermove', e => { lastPt[0] = e.clientX; lastPt[1] = e.clientY; }, { passive: true });
+
 export class Rack {
   constructor(host, opts = {}) {
     this.host = host; this.opts = opts;
@@ -57,6 +61,8 @@ export class Rack {
     host.innerHTML = '<div class="rack-tiers" aria-hidden="true"></div><div class="rack-tiles" role="list"></div>';
     this.box = host.querySelector('.rack-tiles');
     this.box.addEventListener('pointerdown', e => this.down(e));
+    // a tile that just landed under a still pointer must not then hop up into its hover lift
+    this.box.addEventListener('pointermove', e => { if (this.calmAt && Math.hypot(e.clientX - this.calmAt[0], e.clientY - this.calmAt[1]) > 6) { this.calmAt = null; this.box.classList.remove('calm'); } });
     this.box.addEventListener('click', e => this.emptyTap(e));
     this.drag = null; this.lastTap = { id: null, t: 0 };
   }
@@ -183,7 +189,7 @@ export class Rack {
 
   cls(id) {
     const rev = S.settings.reverseOkey !== false && isOkey(id, this.okey) && !this.upright.has(id);
-    return tileClass(id, this.okey) + ' rt' + (rev ? ' rev' : '') + (this.facedown.has(id) ? ' fd' : '') + (this.selected === id ? ' sel' : '') + (this.drag && this.drag.id === id && this.drag.moved ? ' drag' : '') + (this.hidden.has(id) ? ' gone' : '') + (this.flags.has(id) ? ' ' + this.flags.get(id) : '');
+    return tileClass(id, this.okey) + ' rt' + (rev ? ' rev' : '') + (this.facedown.has(id) ? ' fd' : '') + (this.sad === id ? ' sad' : '') + (this.selected === id ? ' sel' : '') + (this.drag && this.drag.id === id && this.drag.moved ? ' drag' : '') + (this.hidden.has(id) ? ' gone' : '') + (this.flags.has(id) ? ' ' + this.flags.get(id) : '');
   }
   // a class on one tile (e.g. 'taken': the discard you picked up in 101 and must play)
   flag(id, cls) { this.flags.clear(); if (id != null) this.flags.set(id, cls); this.render(); }
@@ -205,6 +211,7 @@ export class Rack {
     if (on) this.hidden.add(id); else this.hidden.delete(id);
     const el = this.els.get(id); if (!el) return;
     if (!on) {
+      this.calm();
       const turn = S.settings.reverseOkey !== false && isOkey(id, this.okey);
       if (turn) this.upright.add(id);
       el.style.transition = 'none'; el.className = this.cls(id); void el.offsetWidth; el.style.transition = '';
@@ -218,19 +225,20 @@ export class Rack {
     for (const id of ids) { this.upright.delete(id); const el = this.els.get(id); if (el) el.className = this.cls(id); }
   }
   holdUpright(ids) { ids.forEach(id => this.upright.add(id)); }
+  calm() { this.box.classList.add('calm'); this.calmAt = lastPt.slice(); }
   // the deal: these tiles arrive face down (an okey stays upright until the sort is done), spreading out from one slot
   dealIn(ids, fromSlot) {
-    const m = fromSlot != null ? this.pos(fromSlot) : null;
+    const m = fromSlot != null ? this.pos(fromSlot) : null, els = [];
     for (const id of ids) {
       this.hidden.delete(id); this.facedown.add(id);
       if (isOkey(id, this.okey)) this.upright.add(id);
       const el = this.els.get(id); if (!el) continue;
-      const p = this.pos(this.slotOf(id));
       el.style.transition = 'none';
       if (m) el.style.transform = `translate(${m.x}px,${m.y}px)`;
-      el.className = this.cls(id); void el.offsetWidth; el.style.transition = '';
-      el.style.transform = `translate(${p.x}px,${p.y}px)`;
+      el.className = this.cls(id); els.push([el, this.pos(this.slotOf(id))]);
     }
+    if (els.length) void this.box.offsetWidth;   // one reflow for the packet, then they spread to their slots
+    for (const [el, p] of els) { el.style.transition = ''; el.style.transform = `translate(${p.x}px,${p.y}px)`; }
   }
   // face down (the deal: tiles arrive on the rack back up, then turn over)
   faceDown(ids, on = true) { ids.forEach(id => { if (on) this.facedown.add(id); else this.facedown.delete(id); const el = this.els.get(id); if (el) el.className = this.cls(id); }); }

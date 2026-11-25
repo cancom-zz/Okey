@@ -28,10 +28,11 @@ await page.waitForSelector('.rack .rt', { timeout: 30_000 });
 const end = Date.now() + SECONDS * 1000;
 while (Date.now() < end) {
   const st = await page.evaluate(() => { const f = document.querySelector('.felt'); return { draw: f.classList.contains('can-draw'), discard: f.classList.contains('can-discard'), result: !!document.querySelector('#result:not([hidden]) #rvNext:not([disabled])'), confirm: !!document.querySelector('#cYes') }; });
-  if (st.confirm) await page.click('#cYes');
-  else if (st.result) await page.click('#rvNext');
-  else if (st.draw) await page.click('#pile');
-  else if (st.discard) { const tl = await page.$$('.rack .rt:not(.gone)'); if (tl.length) await tl[tl.length - 1].dblclick(); }
+  const o = { timeout: 2500 }, soft = pr => pr.catch(() => {});   // the state may move on under a throttled CPU
+  if (st.confirm) await soft(page.click('#cYes', o));
+  else if (st.result) await soft(page.click('#rvNext', o));
+  else if (st.draw) await soft(page.click('#pile', o));
+  else if (st.discard) { const tl = await page.$$('.rack .rt:not(.gone)'); if (tl.length) await soft(tl[tl.length - 1].dblclick(o)); }
   await page.waitForTimeout(300);
 }
 const { flights, long, mode } = await page.evaluate(() => ({ flights: globalThis.__okeyFlights, long: globalThis.__okeyLong, mode: globalThis.__okeyLocalMode }));

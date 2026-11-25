@@ -89,6 +89,8 @@ function ooh(t, level) {
 
 export function sfx(kind, opt = {}) {
   if (!S.settings.sound) return;
+  // before the first tap the browser would not play it anyway: don't build the audio graph for nothing
+  if (!ctx && navigator.userActivation && !navigator.userActivation.hasBeenActive) return;
   const c = ac(); if (!c) return;
   const t = c.currentTime + 0.005;
   try {
@@ -106,7 +108,7 @@ export function sfx(kind, opt = {}) {
       case 'deal': for (let k = 0; k < 5; k++) clack(t + k * rnd(0.018, 0.03), 0.35 + Math.random() * 0.2, 1.05); break;
       case 'shuffle': {   // tiles rattling as the pile is mixed
         noise(t, 1.1, { f: 1500, q: 0.6, gain: 0.05, decay: 2 });
-        for (let k = 0; k < 36; k++) clack(t + rnd(0, 1.05), rnd(0.12, 0.42), rnd(0.85, 1.3));
+        for (let k = 0; k < 16; k++) clack(t + rnd(0, 1.05), rnd(0.15, 0.45), rnd(0.85, 1.3));   // (few nodes: cheap on slow phones)
         break;
       }
       case 'turn': tone(t, 784, 0.22, { gain: 0.05 }); tone(t + 0.11, 1175, 0.32, { gain: 0.045 }); break;

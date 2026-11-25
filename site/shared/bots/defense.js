@@ -17,8 +17,8 @@
 
 import { faceColor, faceNum, runNeighbors, groupNeighbors, FACES } from './faces.js';
 
-export const DEFENSE_CAP = 1.0;       // defense never outweighs breaking a complete set
-export const DANGER_SCALE = 1.0;      // danger in hand-value units (one tile in a set = 1), times `defense`
+export const DEFENSE_CAP = 1.5;       // defense never outweighs breaking a complete set (about 1.6+)
+export const DANGER_SCALE = 2.0;      // danger in hand-value units (one tile in a set = 1), times `defense`
 export const LATE_BOOST = 1.6;        // `late`: urgency and cap multiplier once the pile is a quarter full
 export const FULL_READ = 0.5;         // from here on: passes, throws, dumped colours/numbers, previous player
 export const TELL_READ = 0.6;         // from here on: avoid discards that tell
@@ -76,14 +76,24 @@ export function dangerFn(view, mem, params, live, { pileStart = 48, late = false
       else if (faceNum(g) === faceNum(f)) want += 0.6;
     }
     danger += want;
-    // What they threw or let pass: safe (that face), safer (around it).
-    if (throws.includes(f) || passed.includes(f)) danger *= 0.15;
-    else if (full) {
-      for (const g of throws) if (runDist(f, g) === 1) { danger *= 0.8; break; }
+    // What they threw or let pass: safe (that face). Full readers: a tile they threw was loose in their hand,
+    // so its neighbours (same colour within 2, same number) are less likely there; dumped colours and
+    // numbers are safer too.
+    if (throws.includes(f) || passed.includes(f)) danger *= 0.3;
+    if (full) {
+      let near = 0;
+      for (const g of throws) {
+        if (g === f) continue;
+        const rd = runDist(f, g);
+        if (rd === 1) near += 1; else if (rd === 2) near += 0.6; else if (faceNum(g) === faceNum(f)) near += 0.8;
+      }
+      danger *= Math.pow(0.6, near);
       if (dumpColor[faceColor(f)] >= 3) danger *= 0.75;
       if (dumpNum[faceNum(f)] >= 2) danger *= 0.8;
     }
-    const out = Math.min(DEFENSE_CAP * lateBoost, params.defense * DANGER_SCALE * urgency * danger);
+    // Soft cap: bounded (never worth breaking a complete set) but still ordered when everything is dangerous.
+    const cap = DEFENSE_CAP * lateBoost;
+    const out = cap * (1 - Math.exp(-(params.defense * DANGER_SCALE * urgency * danger) / cap));
     cache.set(f, out);
     return out;
   };

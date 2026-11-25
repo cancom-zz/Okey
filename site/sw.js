@@ -4,7 +4,7 @@
 const VERSION = 'okey-v1-2026-11-25';
 const CORE = [
   './', 'index.html', 'manifest.webmanifest', 'icon.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png',
-  'css/okey.css',
+  'css/okey.css', 'css/stats.css',
   'i18n/tr.js', 'i18n/en.js',
   'js/app.js', 'js/anim.js', 'js/local-worker.js', 'js/stats.js', 'js/config.js', 'js/guide.js', 'js/home.js', 'js/i18n.js', 'js/lobby.js', 'js/local.js', 'js/net.js',
   'js/rack.js', 'js/result.js', 'js/sheets.js', 'js/sound.js', 'js/store.js', 'js/table.js', 'js/tiles.js', 'js/tip.js', 'js/ui.js', 'js/v101.js',

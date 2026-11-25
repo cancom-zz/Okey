@@ -191,10 +191,10 @@ export default {
   'settings.lang': 'Dil',
   'settings.sound': 'Ses',
   'settings.speed': 'Animasyon',
-  'settings.felt': 'Çuha rengi',
+  'settings.felt': 'Masa örtüsü',
   'settings.profile': 'Profil',
   'speed.slow': 'Yavaş', 'speed.normal': 'Normal', 'speed.fast': 'Hızlı',
-  'felt.green': 'Yeşil', 'felt.burgundy': 'Bordo', 'felt.blue': 'Mavi',
+  'felt.green': 'Yeşil', 'felt.burgundy': 'Bordo', 'felt.blue': 'Lacivert',
   'profile.welcome': 'Hoş geldin!',
   'profile.title': 'Profil',
   'profile.intro': 'Masada görünecek adını ve simgeni seç. Hesap yok, şifre yok: bu cihazda kalır.',
@@ -428,7 +428,7 @@ export default {
   "a11y.c2": "mavi",
   "a11y.c3": "siyah",
   "rules.keys": "Klavye: ← → ↑ ↓ taş seç · Enter at · D desteden çek · L soldan al · Esc bırak",
-  // ---- client polish 2 (reversed okey, forgotten gösterge, slam finishes, cloths) ----
+  // ---- client polish 2 (reversed okey, forgotten gösterge, slam finishes) ----
   "settings.reverseOkey": "Okeyi ters çevir",
   "settings.okeyGuard": "Okey atarken sor",
   "guard.title": "Okeyi atıyorsun!",
@@ -439,8 +439,4 @@ export default {
   "slam.okey": "OKEY ATTI!",
   "slam.pairs": "ÇİFTE BİTTİ!",
   "slam.both": "ÇİFTE OKEY!",
-  "settings.cloth": "Masa örtüsü",
-  "cloth.green": "Yeşil",
-  "cloth.bordo": "Bordo",
-  "cloth.navy": "Lacivert",
 };

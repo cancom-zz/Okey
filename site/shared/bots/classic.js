@@ -22,7 +22,8 @@ const DEF_WEIGHT = 10;        // lookahead 4 discard score: one missing tile ...
 const ACC_WEIGHT = 0.2;       // ... outweighs any acceptance (live tiles that help) ...
 const VALUE_WEIGHT = 0.3;     // ... and the hand value only breaks ties
 const DANGER_WEIGHT = 2;      // defense can override a few tiles of acceptance, never a missing tile
-const ACC_CANDIDATES = 4;    // lookahead 4: discards whose acceptance is counted
+const ACC_CANDIDATES = 4;    // lookahead 4: discards whose acceptance is counted (best by value) ...
+const SAFE_CANDIDATES = 2;   // ... plus the safest ones
 const ACC_TAKE_MARGIN = 6;
 const BLUFF_MARGIN = 0.25;    // a bluff discard costs at most this much hand value ...
 const BLUFF_MARGIN_L4 = 0.5;  // ... (lookahead 4 scale: same deficiency, about 2 tiles of acceptance)    // lookahead 4: take a discard that keeps the deficiency only if it adds this many
@@ -68,8 +69,13 @@ function rankDiscards(hand, view, ctx, danger, exclude, deep = ctx.lookahead >= 
       Object.assign(x, efficiencyOf(x.rest, okey, ctx.kctx, { atMost: minDef }));
       if (x.def < minDef) minDef = x.def;
     }
-    // Acceptance for the best few of the closest hands (by value); the rest keep 0.
-    const close = out.filter((x) => x.def === minDef).sort((a, b) => b.value - a.value).slice(0, ACC_CANDIDATES);
+    // Acceptance for the best few of the closest hands by value, and for the safest few (so safety is weighed
+    // against real efficiency, not against a missing count); the rest keep 0.
+    const closest = out.filter((x) => x.def === minDef);
+    const close = new Set(closest.slice().sort((a, b) => b.value - a.value).slice(0, ACC_CANDIDATES));
+    if (danger) {
+      for (const x of closest.slice().sort((a, b) => danger(faceIndex(a.tile, okey)) - danger(faceIndex(b.tile, okey))).slice(0, SAFE_CANDIDATES)) close.add(x);
+    }
     for (const x of out) x.acc = 0;
     for (const x of close) x.acc = acceptance(x.counts, x.jokers, ctx.kctx, x.def, { liveOkeys: ctx.liveOkeys });
     for (const x of out) x.value = -DEF_WEIGHT * x.def + ACC_WEIGHT * x.acc + VALUE_WEIGHT * x.value;

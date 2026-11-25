@@ -100,7 +100,8 @@ async function dragTo(fromSel, to) {
   await page.mouse.up();
   return at || to;
 }
-const lastTileSel = async () => { const ids = await rackIds(); return `.rack .rt[data-id="${ids[ids.length - 1]}"]`; };
+// the last tile that is not an okey (discarding an okey asks first)
+const lastTileSel = async () => { const ids = await page.evaluate(() => [...document.querySelectorAll('.rack .rt:not(.okey):not(.gone)')].map(e => +e.dataset.id)); return `.rack .rt[data-id="${ids[ids.length - 1]}"]`; };
 const freeSlot = () => page.evaluate(() => { const r = document.querySelector('.rack-tiles').getBoundingClientRect(); return { x: r.right - 12, y: r.bottom - 14 }; });
 
 console.log('own moves at 60 fps (390x600)');

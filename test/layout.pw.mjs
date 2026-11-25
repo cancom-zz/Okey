@@ -13,7 +13,7 @@ const SIZES = [[390, 600], [375, 548], [844, 390], [1280, 800]];
 const PORT = 8000 + Math.floor(Math.random() * 900);
 const BASE = `http://localhost:${PORT}`;
 const PROFILE = { name: 'Can', avatar: '🦊', id: 'pw-device-00000001', secret: 'pw-secret-00000001', tip: { play: 0, at: 0, next: 0, went: 0, done: true } };
-const only = process.argv[2] || '';   // 'e2e' or 'layout' to run one part
+const only = process.argv[2] || '';   // 'e2e', 'layout' or 'offline' to run one part
 
 const failures = [];
 const fail = (msg) => { failures.push(msg); console.log('  ✗ ' + msg); };
@@ -64,6 +64,7 @@ async function playTurns(p, ms) {
     });
     if (st.result) return 'result';
     if (st.tip) await p.click('#tiplater');
+    if (await p.$('#cYes')) { await p.click('#cYes'); await p.clock.runFor(300); continue; }   // the okey guard asks first
     if (st.draw) await p.click('#pile');
     else if (st.discard) {
       const tiles = await p.$$('.rack .rt:not(.gone)');
@@ -161,7 +162,7 @@ async function checkSeats(p, label) {
 
 const TABLE_SEL = ['.rack .rt', '#pile', '.seat .av', '.ds .dstack', '.bar .chip', '.top .ibtn', '.ind', '.status', '#o101 button', '#melds'];
 
-if (only !== 'e2e') for (const [w, h] of SIZES) {
+if (only !== 'e2e' && only !== 'offline') for (const [w, h] of SIZES) {
   const tag = `${w}x${h}`;
   console.log(`\n${tag}`);
   // home
@@ -232,7 +233,7 @@ if (only !== 'e2e') for (const [w, h] of SIZES) {
 }
 
 // ---- a full practice match on the real LocalTable: deal → turns → round end → next round → match end ----
-if (only !== 'layout') {
+if (only !== 'layout' && only !== 'offline') {
   console.log('\nfull practice match (390x600, 2 rounds)');
   const p = await page(390, 600, { clock: true });
   await p.goto(`${BASE}/?anim=0&rounds=2#/solo`);
@@ -258,7 +259,7 @@ if (only !== 'layout') {
 }
 
 // ---- 101 Okey end to end: take + put back, open, lay off onto a table meld, the işlek warning, the result ----
-if (only !== 'layout') {
+if (only !== 'layout' && only !== 'offline') {
   console.log('\n101 practice (390x600, up to 4 rounds)');
   const p = await page(390, 600, { clock: true });
   await p.goto(`${BASE}/?anim=0&variant=101&rounds=4#/solo`);
@@ -288,10 +289,14 @@ if (only !== 'layout') {
   console.log('\noffline practice (service worker)');
   const p = await page(390, 600);
   await p.goto(`${BASE}/#/`);
-  const cached = await p.waitForFunction(async () => {
-    const keys = await caches.keys(); if (!keys.length) return 0;
-    const n = (await (await caches.open(keys[0])).keys()).length; return n > 40 ? n : 0;
-  }, null, { timeout: 20_000 }).then(h => h.jsonValue(), () => 0);
+  let cached = 0;
+  for (let i = 0; i < 80 && !cached; i++) {
+    cached = await p.evaluate(async () => {
+      const keys = await caches.keys(); if (!keys.length) return 0;
+      const n = (await (await caches.open(keys[0])).keys()).length; return n > 40 ? n : 0;
+    }).catch(() => 0);
+    if (!cached) await p.waitForTimeout(250);
+  }
   cached ? ok(`service worker precached ${cached} files`) : fail('service worker did not precache the app');
   await p.context().setOffline(true);
   await p.goto(`${BASE}/?anim=0#/solo`);

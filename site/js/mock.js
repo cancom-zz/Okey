@@ -17,7 +17,8 @@ const FIN = { reveal: ['bot', 'sets', 0], match: ['bot', 'sets', 0], pairs: ['bo
   mywin: ['me', 'sets', 0, 0], myokey: ['me', 'sets', 1, 1], mypairs: ['me', 'pairs', 0, 1], myboth: ['me', 'pairs', 1, 1] };
 const SETS = [tid(0, 1), tid(0, 2), tid(0, 3), tid(0, 4), tid(1, 7), tid(2, 7), tid(3, 7), tid(3, 9), tid(3, 10), tid(3, 11), tid(3, 12), tid(2, 11), tid(2, 12), tid(2, 13), tid(1, 5)];
 const SETS_G = [[tid(0, 1), tid(0, 2), tid(0, 3), tid(0, 4)], [tid(1, 7), tid(2, 7), tid(3, 7)], [tid(3, 9), tid(3, 10), tid(3, 11), tid(3, 12)], [tid(2, 11), tid(2, 12), tid(2, 13)]];
-const pairsHand = okey => [tid(0, 3), tid(0, 3, 1), tid(1, 9), tid(1, 9, 1), tid(2, 12), tid(2, 12, 1), tid(3, 1), tid(3, 1, 1), tid(0, 10), tid(0, 10, 1), tid(2, 5), tid(2, 5, 1), okey ? tid(3, 8, 1) : 104, tid(3, 8), tid(1, 2)];
+const pairsHand = okey => // okey = no false joker (its pair would depend on the okey)
+  [tid(0, 3), tid(0, 3, 1), tid(1, 9), tid(1, 9, 1), tid(2, 12), tid(2, 12, 1), tid(3, 1), tid(3, 1, 1), tid(0, 10), tid(0, 10, 1), tid(2, 5), tid(2, 5, 1), okey ? tid(3, 8, 1) : 104, tid(3, 8), tid(1, 2)];
 const pairsGroups = okey => { const h = pairsHand(okey); return [0, 2, 4, 6, 8, 10, 12].map(i => [h[i], h[i + 1]]); };
 
 function shuffle(a) {
@@ -127,7 +128,7 @@ export function createMockTable({ code = 'PRAKTK', scenario = '', fast = false, 
     let rigged = null;
     if (fin && st.roundNo === 1) {
       const who = fin[0] === 'me' ? st.you : st.dealer;
-      rigged = fin[1] === 'pairs' ? pairsHand(fin[2]) : SETS.slice();
+      rigged = fin[1] === 'pairs' ? pairsHand(fin[2] || fin[0] === 'me') : SETS.slice();
       hands[who] = rigged.slice();
       bag = bag.filter(x => !rigged.includes(x));
       if (fin[2]) bag = bag.filter(x => x !== rigged[rigged.length - 1] - 1);   // kept back for the indicator
@@ -164,7 +165,7 @@ export function createMockTable({ code = 'PRAKTK', scenario = '', fast = false, 
     scheduleBot(3200);
     if (rigged && fin[0] === 'me' && fin[3]) {
       const r = st.r;
-      later(5600, () => { if (st.r === r && r.turn === st.you && st.phase === 'playing') act(st.you, { type: 'finish', tile: finTile, groups: fin[1] === 'pairs' ? pairsGroups(fin[2]) : SETS_G }); });
+      later(5600, () => { if (st.r === r && r.turn === st.you && st.phase === 'playing') act(st.you, { type: 'finish', tile: finTile, groups: fin[1] === 'pairs' ? pairsGroups(true) : SETS_G }); });
     }
   }
 
