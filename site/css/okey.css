@@ -817,3 +817,5 @@ html.noanim *,html.noanim *::before,html.noanim *::after{animation:none!importan
 }
 .guide{pointer-events:none}
 .guide button{pointer-events:auto}
+
+.dstack .tile.lifted{opacity:0!important}   /* dragged off the stack: the ghost is the tile now */

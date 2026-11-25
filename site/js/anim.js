@@ -117,7 +117,7 @@ export const sleep = ms => (ms > 0 ? new Promise(r => setTimeout(r, ms)) : Promi
 const FLIP_AT = { early: [0.06, 0.46], mid: [0.25, 0.75], late: [0.52, 0.94] };
 
 //   faceFrom / faceTo: true = face up (needs id). flipAt: 'early' | 'mid' | 'late'. lift: arc height factor.
-export async function fly({ id = null, okey = null, from, to, faceFrom = false, faceTo = false, flipAt = 'mid', ms = 340, arc = 0.2, delay = 0, cls = '', onLaunch, onLand }) {
+export async function fly({ id = null, okey = null, from, to, faceFrom = false, faceTo = false, flipAt = 'mid', ms = 340, arc = 0.2, swell = 1.07, delay = 0, cls = '', onLaunch, onLand }) {
   const d = dur(ms);
   if (delay) await sleep(dur(delay));
   onLaunch && onLaunch();
@@ -136,7 +136,7 @@ export async function fly({ id = null, okey = null, from, to, faceFrom = false, 
   while (r1 - r0 > 180) r0 += 360;
   const main = el.animate([
     { transform: `translate(${dx}px,${dy}px) rotate(${r0}deg) scale(${s0})`, offset: 0 },
-    { transform: `translate(${dx * 0.5}px,${dy * 0.5 - lift}px) rotate(${(r0 + r1) / 2}deg) scale(${((s0 + 1) / 2) * 1.07})`, offset: 0.5 },
+    { transform: `translate(${dx * 0.5}px,${dy * 0.5 - lift}px) rotate(${(r0 + r1) / 2}deg) scale(${((s0 + 1) / 2) * swell})`, offset: 0.5 },
     { transform: `translate(0px,0px) rotate(${r1}deg) scale(1)`, offset: 1 },
   ], { duration: d, easing: 'cubic-bezier(.33,0,.2,1)', fill: 'both' });
   turnOver(el.firstElementChild, faceFrom && shows, faceTo && shows, d, FLIP_AT[flipAt] || FLIP_AT.mid);

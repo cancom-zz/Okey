@@ -199,7 +199,18 @@ export class Rack {
       if (m.label != null) el.dataset.l = m.label; else delete el.dataset.l;
     });
   }
-  hide(id, on = true) { if (on) this.hidden.add(id); else this.hidden.delete(id); const el = this.els.get(id); if (el) el.className = this.cls(id); }
+  hide(id, on = true) {
+    if (on) this.hidden.add(id); else this.hidden.delete(id);
+    const el = this.els.get(id); if (!el) return;
+    if (!on) { el.style.transition = 'none'; el.className = this.cls(id); void el.offsetWidth; el.style.transition = ''; return; }
+    el.className = this.cls(id);
+  }
+  // where a tile is drawn right now (its exact pose, mid-transition included): the start of a seamless flight
+  tileGeom(id) {
+    const el = this.els.get(id); if (!el) return null;
+    const r = el.getBoundingClientRect();
+    return { cx: r.left + r.width / 2, cy: r.top + r.height / 2, w: this.tw, h: this.th, rot: 0 };
+  }
 
   render(instant = false) {
     const slots = this.preview || this.slots;
@@ -249,7 +260,8 @@ export class Rack {
       this.opts.onDragStart && this.opts.onDragStart(d.id);
     }
     const b = this.box.getBoundingClientRect();
-    d.el.style.transform = `translate(${e.clientX - b.left - d.ox}px,${e.clientY - b.top - d.oy - this.th * 0.12}px) scale(1.12) rotate(${Math.max(-6, Math.min(6, (e.clientX - d.x0) / 40))}deg)`;
+    d.rot = Math.max(-6, Math.min(6, (e.clientX - d.x0) / 40));
+    d.el.style.transform = `translate(${e.clientX - b.left - d.ox}px,${e.clientY - b.top - d.oy - this.th * 0.12}px) scale(1.12) rotate(${d.rot}deg)`;
     // targets outside the rack first (discard spot, centre), then the rack itself
     const cx = e.clientX, cy = e.clientY - this.th * 0.12;
     const target = this.opts.targetAt ? this.opts.targetAt(cx, cy, d.id) : null;
@@ -271,8 +283,10 @@ export class Rack {
     this.opts.onHover && this.opts.onHover(null, d.id);
     d.el.style.transition = '';
     if (!cancel && d.target) {
+      // the exact pose under the finger (centre, scaled size, tilt): the drop continues from here
       const r = d.el.getBoundingClientRect();
-      const accepted = this.opts.onDrop && this.opts.onDrop(d.target, d.id, { left: r.left, top: r.top, width: r.width, height: r.height });
+      const geo = { cx: r.left + r.width / 2, cy: r.top + r.height / 2, w: this.tw * 1.12, h: this.th * 1.12, rot: d.rot || 0 };
+      const accepted = this.opts.onDrop && this.opts.onDrop(d.target, d.id, { left: r.left, top: r.top, width: r.width, height: r.height, geo });
       if (accepted) { this.render(); return; }
     }
     if (!cancel && preview && d.slot >= 0) { this.slots = preview; this.save(); sfx('rack', { level: 0.7 }); buzz(); }

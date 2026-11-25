@@ -94,7 +94,7 @@ export class TableScreen {
     this.wireDrawSource($('#pile', r), 'pile');
     this.wireDrawSource($('.ds.d3', r), 'discard');
     // tap targets for a selected tile
-    $('.ds.d0', r).addEventListener('click', () => { const id = this.rack.selected; if (id != null && this.can('discard')) this.discardFrom(id, this.rack.tileRect(id)); });
+    $('.ds.d0', r).addEventListener('click', () => { const id = this.rack.selected; if (id != null && this.can('discard')) this.discardFrom(id, this.rack.tileGeom(id)); });
     $('#fz', r).addEventListener('click', () => { const id = this.rack.selected; if (id != null && this.can('discard')) this.tryFinish(id, this.rack.tileRect(id)); });
     this.layout();
   }
@@ -500,7 +500,7 @@ export class TableScreen {
   error(code) {
     this.busy = false;
     if (this.pendingDiscard != null) { const id = this.pendingDiscard; this.pendingDiscard = null; this.rack.hide(id, false); }
-    if (this.pendingDraw) { this.pendingDraw = null; }
+    if (this.pendingDraw) { if (this.pendingDraw.ghost) this.pendingDraw.ghost.remove(); this.pendingDraw = null; this.unlift(); }
     if (this.pendingLay) { this.pendingLay.forEach(id => this.rack.hide(id, false)); this.pendingLay = null; }
     this.disp = dispFrom(this.view); this.render();
     sfx('error');
@@ -561,7 +561,7 @@ export class TableScreen {
     this.act(mv);
     return true;
   }
-  quickDiscard(id) { if (this.can('discard')) this.discardFrom(id, this.rack.tileRect(id)); }
+  quickDiscard(id) { if (this.can('discard')) this.discardFrom(id, this.rack.tileGeom(id)); }
   // 101: the tile flies from where it is to its place on the board (rendered with the new melds, tiles hidden)
   async flyToBoard(ev, next, ids, seat) {
     const r = next.round, me = next.you, p = this.pos(seat);
@@ -604,8 +604,8 @@ export class TableScreen {
     this.setDiscard(0, { top: id, count: (this.disp.disc[me].count || 0) + 1 }, true);
     const top = this.discTop(0), to = this.discGeom(0);
     this.act({ type: 'discard', tile: id });
-    fly({ id, okey, from: rectGeo(fromRect), to, faceFrom: true, faceTo: true, ms: 300, arc: 0.14,
-      onLand: () => { if (this.pendingDiscard === id || this.discTop(0) === top) { top.style.visibility = ''; land(top); sfx(this.disp.disc[me].count > 1 ? 'stack' : 'felt'); buzz(); } } });
+    fly({ id, okey, from: toGeo(fromRect), to, faceFrom: true, faceTo: true, ms: 300, arc: 0.06, swell: 1,
+      onLand: () => { if (this.pendingDiscard === id || this.discTop(0) === top) { top.style.visibility = ''; sfx(this.disp.disc[me].count > 1 ? 'stack' : 'felt'); buzz(); } } });
     return true;
   }
   tryFinish(id, fromRect) {
@@ -649,17 +649,18 @@ export class TableScreen {
       const d = drag; drag = null;
       try { el.releasePointerCapture(d.pid); } catch { /* ignore */ }
       if (d.ghost) {
-        const gr = d.ghost.getBoundingClientRect(); d.ghost.remove();
-        $('.ds.d3 .dtop', this.root) && $('.ds.d3 .dtop', this.root).classList.remove('lifted');
+        const gr = d.ghost.getBoundingClientRect();
         if (this.rack.preview) { this.rack.slots = this.rack.preview; this.rack.preview = null; this.rack.render(); }
-        if (cancel || d.slot < 0) { this.rack.render(); return; }
-        this.drawSlot = d.slot; this.pendingDraw = { from, rect: { left: gr.left, top: gr.top, width: gr.width, height: gr.height } };
+        if (cancel || d.slot < 0) { d.ghost.remove(); this.unlift(); this.rack.render(); return; }
+        const geo = { cx: gr.left + gr.width / 2, cy: gr.top + gr.height / 2, w: this.rack.tw * 1.1, h: this.rack.th * 1.1, rot: -3 };
+        this.drawSlot = d.slot; this.pendingDraw = { from, ghost: d.ghost, geo };
       } else if (cancel) return;
       this.draw(from);
     };
     el.addEventListener('pointerup', e => end(e, false));
     el.addEventListener('pointercancel', e => end(e, true));
   }
+  unlift() { const tp = $('.ds.d3 .dtop', this.root); if (tp) tp.classList.remove('lifted'); }
   draw(from) {
     if (!this.can('draw')) return;
     if (from === 'discard' && !this.disp.disc[(this.view.you + 3) % 4].count) return;
@@ -695,8 +696,10 @@ export class TableScreen {
           this.rack.hide(tile, true);
           this.rack.sync([...this.rack.tiles(), tile], new Map([[tile, slot]]));
           sfx('draw');
-          await flyTile({ id: tile, okey, from: (pd && pd.rect) || fromRect, to: this.rack.tileRect(tile), start: ev.from === 'pile' && !(pd && pd.rect) ? 'back' : 'face', ms: pd && pd.rect ? 160 : 420, arc: 0.18 });
-          this.rack.hide(tile, false); sfx('rack'); buzz(); settle(this.rack.els.get(tile), 0.6);
+          const ghost = pd && pd.ghost;
+          await fly({ id: tile, okey, from: ghost ? pd.geo : fromGeo, to: rectGeo(this.rack.slotRect(this.rack.slotOf(tile))), faceFrom: ev.from !== 'pile', faceTo: true, flipAt: 'late',
+            ms: ghost ? 220 : 380, arc: ghost ? 0.03 : 0.08, swell: ghost ? 1 : 1.03, onLaunch: () => { if (ghost) ghost.remove(); },
+            onLand: () => { this.rack.hide(tile, false); sfx('rack'); buzz(); } });
           d.count[me]++;
         } else {
           // a tile back slides from the pile to their rack; a discard they take slides face up and turns in
@@ -724,8 +727,8 @@ export class TableScreen {
         this.stackPush(ev.seat, ev.tile);
         this.setDiscard(p, st, true);
         const top = this.discTop(p), to = this.discGeom(p);
-        await fly({ id: ev.tile, okey, from, to, faceFrom: ev.seat === me, faceTo: true, flipAt: 'early', ms: 400, arc: 0.26,
-          onLand: () => { top.style.visibility = ''; land(top); sfx(st.count > 1 ? 'stack' : 'felt'); } });
+        await fly({ id: ev.tile, okey, from, to, faceFrom: ev.seat === me, faceTo: true, flipAt: 'early', ms: 400, arc: ev.seat === me ? 0.06 : 0.26,
+          onLand: () => { top.style.visibility = ''; if (ev.seat !== me) land(top); sfx(st.count > 1 ? 'stack' : 'felt'); } });
         return;
       }
       case 'showIndicator': return this.showIndicatorFx(ev, true);
@@ -752,7 +755,7 @@ export class TableScreen {
         if (ev.seat === me) {
           this.rack.hide(ev.okey, true); this.rack.sync([...this.rack.tiles(), ev.okey]);
           await fly({ id: ev.okey, okey, from: src, to: rectGeo(this.rack.tileRect(ev.okey)), faceFrom: true, faceTo: true, ms: 420, arc: 0.25, cls: 'golden' });
-          this.rack.hide(ev.okey, false); settle(this.rack.els.get(ev.okey));
+          this.rack.hide(ev.okey, false);
         } else { const slot = this.oppAdd(p); await fly({ id: ev.okey, okey, from: src, to: this.oppGeom(p, slot), faceFrom: true, faceTo: false, flipAt: 'late', ms: 420, arc: 0.25, cls: 'golden', onLand: () => this.oppReveal(p, slot) }); }
         this.disp.count[ev.seat]++;
         return;
@@ -790,8 +793,9 @@ export class TableScreen {
         this.rack.hide(ev.tile, true); this.rack.sync([...this.rack.tiles(), ev.tile], new Map([[ev.tile, slot]]));
         this.rack.flag(ev.tile, 'taken');
         sfx('draw');
-        await fly({ id: ev.tile, okey, from: pd && pd.rect ? rectGeo(pd.rect) : from, to: rectGeo(this.rack.tileRect(ev.tile)), faceFrom: true, faceTo: true, ms: pd && pd.rect ? 160 : 380, arc: 0.18 });
-        this.rack.hide(ev.tile, false); settle(this.rack.els.get(ev.tile), 0.6);
+        const ghost = pd && pd.ghost;
+        await fly({ id: ev.tile, okey, from: ghost ? pd.geo : from, to: rectGeo(this.rack.slotRect(this.rack.slotOf(ev.tile))), faceFrom: true, faceTo: true, ms: ghost ? 220 : 380, arc: ghost ? 0.03 : 0.08, swell: ghost ? 1 : 1.03,
+          onLaunch: () => { if (ghost) ghost.remove(); }, onLand: () => { this.rack.hide(ev.tile, false); sfx('rack'); buzz(); } });
       } else {
         const slot = this.oppAdd(p);
         await fly({ id: ev.tile, okey, from, to: this.oppGeom(p, slot), faceFrom: true, faceTo: false, flipAt: 'late', ms: 380, arc: 0.15, onLand: () => this.oppReveal(p, slot) });
@@ -1070,6 +1074,7 @@ function shiftPreview(slots, at, cols) {
   return slots;
 }
 // geometry <-> rect, and the small stable rotations of tiles lying on the felt
+function toGeo(x) { return !x ? null : x.geo ? x.geo : x.cx != null ? x : rectGeo(x); }
 function rectGeo(r, rot = 0) { return r ? { cx: r.left + r.width / 2, cy: r.top + r.height / 2, w: r.width, h: r.height, rot } : null; }
 function geoRect(g) { return g ? { left: g.cx - g.w / 2, top: g.cy - g.h / 2, width: g.w, height: g.h } : null; }
 function tileRot(id) { return (((id * 37 + 11) % 13) - 6) * 0.55; }              // -3.3° … 3.3°, the same for a tile every time
