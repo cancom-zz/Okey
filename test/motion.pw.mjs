@@ -56,10 +56,12 @@ async function film(name, act, target) {
   await cdp.send('Page.startScreencast', { format: 'jpeg', quality: 70, everyNthFrame: 1 });
   await page.evaluate(() => globalThis.__sample());
   const release = await act();
-  await page.waitForTimeout(900);
+  // measure the real tile the moment the flight hands over (a bot may take my discard soon after)
+  await page.waitForFunction(() => globalThis.__samples && globalThis.__samples.length > 0 && !document.querySelector('#fx .fly'), null, { timeout: 5000, polling: 'raf' }).catch(() => {});
+  const tgt = await target();
+  await page.waitForTimeout(250);
   await cdp.send('Page.stopScreencast');
   const samples = await page.evaluate(() => { const s = globalThis.__samples; globalThis.__samples = null; return s; });
-  const tgt = await target();
   // write the frames and a contact sheet
   const dir = join(OUT, name); await mkdir(dir, { recursive: true });
   const shots = frames.slice(0, 48); frames = null;
@@ -78,8 +80,9 @@ async function film(name, act, target) {
   const last = path.at(-1), endGap = d(last), sizeGap = Math.max(Math.abs(last.w - tgt.w), Math.abs(last.h - tgt.h));
   const startGap = release ? Math.hypot(path[0].x - release.x, path[0].y - release.y) : 0;
   if (process.env.MOTION_DEBUG) console.log(name, JSON.stringify(path.map(p => [Math.round(p.x), Math.round(p.y)])), JSON.stringify(tgt));
-  const msg = `${name}: ${path.length} frames, end ${endGap.toFixed(1)}px/${sizeGap.toFixed(1)}px off, overshoot ${Math.max(0, (over - 1) * 100).toFixed(1)}%${release ? `, start ${startGap.toFixed(1)}px from the release` : ''}`;
-  (worse === 0 && over <= 1.01 && endGap < 2 && sizeGap < 2 && startGap < 3) ? ok(msg) : fail(msg + (worse ? `, ${worse} frames moved away from the target` : ''));
+  const overPx = Math.max(0, (over - 1) * Math.sqrt(len2));
+  const msg = `${name}: ${path.length} frames, end ${endGap.toFixed(1)}px/${sizeGap.toFixed(1)}px off, overshoot ${overPx.toFixed(1)}px${release ? `, start ${startGap.toFixed(1)}px from the release` : ''}`;
+  (worse === 0 && overPx < 1 && endGap < 2 && sizeGap < 2 && startGap < 3) ? ok(msg) : fail(msg + (worse ? `, ${worse} frames moved away from the target` : ''));
 }
 const topOfMyStack = async () => { const b = await (await page.$('.ds.d0 .dtop')).boundingBox(); return { x: b.x + b.width / 2, y: b.y + b.height / 2, w: b.width, h: b.height }; };
 const newestRackTile = before => async () => {

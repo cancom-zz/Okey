@@ -457,7 +457,7 @@ export class TableScreen {
     } else if (v.phase === 'roundEnd') txt = t('status.roundEnd');
     else if (v.phase === 'matchEnd') txt = t('status.matchEnd');
     $('.stx', el).innerHTML = txt; el.className = 'status ' + cls;
-    const myTurn = v.phase === 'playing' && r && r.turn === v.you;
+    const myTurn = v.phase === 'playing' && r && r.turn === v.you && !this.dealing;   // no 'your move' cues while the deal is still on
     this.felt.classList.toggle('can-draw', !!(myTurn && r.stage === 'draw'));
     this.felt.classList.toggle('can-discard', !!(myTurn && r.stage === 'discard'));
   }
