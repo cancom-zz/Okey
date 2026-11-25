@@ -203,7 +203,10 @@ export class TableScreen {
     this.busy = false;
     if (v.phase === 'playing' && r && r.turn === v.you && (!prev || !prev.round || prev.round.turn !== v.you || prev.round.number !== r.number) && v.you != null) {
       sfx('turn'); pulse($('#rack', this.root), 'myturn', 1200);
-      if (!this.dealing) setTimeout(() => maybeGuide(this.root, this.is101 ? '101' : 'classic'), dur(500) || 30);
+      if (!this.dealing) setTimeout(() => {   // only while it is still my turn (not over a finish, a slam or the result)
+        const w = this.view, rr = w && w.round;
+        if (!this.dealing && !this.slamming && w && w.phase === 'playing' && rr && rr.turn === w.you) maybeGuide(this.root, this.is101 ? '101' : 'classic');
+      }, dur(500) || 30);
     }
     if ((v.phase === 'roundEnd' || v.phase === 'matchEnd') && v.result && this.resultShown !== resultKey(v)) this.showResult(false);
     if (v.phase === 'playing' && !$('#result', this.root).hidden) this.hideResult();
@@ -1198,6 +1201,7 @@ export class TableScreen {
     const key = resultKey(v);
     if (this.resultShown === key) return;
     this.resultShown = key;
+    closeGuide(false);
     const r = v.result, el = $('#result', this.root), story = this.is101 ? story101(v) : storyOf(v);
     const win = r.winner != null ? v.seats[r.winner] : null;
     const okey = v.round && v.round.okey;
