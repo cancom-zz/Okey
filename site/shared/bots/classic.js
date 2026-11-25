@@ -8,7 +8,7 @@ import { finishOptions, findFinish } from '../okey/rules.js';
 import { otherCopy } from '../okey/tiles.js';
 import { FACES, WILD, faceIndex, handVector, faceColor, faceNum, okeyFaceIndex } from './faces.js';
 import { makeContext, evaluate, expectedDrawGain, strongOptions } from './evaluate.js';
-import { dangerFn, DEFENSE_CAP } from './defense.js';
+import { dangerFn, DEFENSE_CAP, readPrevious, tellPenalty, bluffPick, TELL_READ } from './defense.js';
 import { keptContext, efficiencyOf, acceptance } from './efficiency.js';
 
 const BLUNDER_MARGIN = 1.0;   // a blunder only picks a move at most this much worse (stays plausible:
@@ -23,7 +23,9 @@ const ACC_WEIGHT = 0.2;       // ... outweighs any acceptance (live tiles that h
 const VALUE_WEIGHT = 0.3;     // ... and the hand value only breaks ties
 const DANGER_WEIGHT = 2;      // defense can override a few tiles of acceptance, never a missing tile
 const ACC_CANDIDATES = 4;    // lookahead 4: discards whose acceptance is counted
-const ACC_TAKE_MARGIN = 6;    // lookahead 4: take a discard that keeps the deficiency only if it adds this many
+const ACC_TAKE_MARGIN = 6;
+const BLUFF_MARGIN = 0.25;    // a bluff discard costs at most this much hand value ...
+const BLUFF_MARGIN_L4 = 0.5;  // ... (lookahead 4 scale: same deficiency, about 2 tiles of acceptance)    // lookahead 4: take a discard that keeps the deficiency only if it adds this many
 const finishPoints = (o) => (o.kind === 'pairs' ? 4 : 2) * (o.okeyFinish ? 2 : 1);
 
 /** Value of a tile list for this bot (higher = closer to finishing). */
@@ -146,14 +148,22 @@ export function plan(view, mem, params, rng, st) {
     if (st.indicator === 'show') return { action: { type: 'showIndicator' }, kind: 'show', hardness: 0 };
   }
 
-  const live = mem.liveTable(hand, view);
+  const seenLive = mem.liveTable(hand, view);
+  // Taşlamak, offense: what the previous player is unlikely to feed us counts one copy less (read >= 0.5).
+  const live = readPrevious(view, mem, params, seenLive);
   const ctx = makeContext(live, contextOptions(params, live, r.pileCount));
   if (params.lookahead >= 4) {
     ctx.kctx = keptContext(live);
     const seen = [...hand, ...view.seats.map((x) => x.discard.top)].filter((t) => t != null && faceIndex(t, okey) === WILD);
     ctx.liveOkeys = Math.max(0, 2 - seen.length);
   }
-  const danger = dangerFn(view, mem, params, live, { pileStart: 48, late: params.lookahead >= 4 });
+  // Taşlamak, defense (what the next player collects) and tells (what our discard says about us).
+  const handFaces = hand.map((t) => faceIndex(t, okey)).filter((f) => f !== WILD);
+  const reader = dangerFn(view, mem, params, seenLive, { pileStart: 48, late: params.lookahead >= 4 });
+  const telling = (params.read ?? 0) >= TELL_READ;
+  const danger = reader || telling
+    ? (f) => (reader ? reader(f) : 0) + tellPenalty(params, f, handFaces) / (params.lookahead >= 4 ? DANGER_WEIGHT : 1)
+    : null;
 
   if (r.stage === 'draw') {
     const left = (you + 3) % 4;
@@ -214,10 +224,20 @@ export function plan(view, mem, params, rng, st) {
   st.took = null;
   let pick = ranked[0];
   const second = ranked[1];
+  let slipped = false;
   if (rng.chance(params.blunder)) {
     // A plausible slip: the best discard that is actually worse, but not by much.
     const slip = ranked.find((x) => x.value < pick.value - 0.01 && x.value >= pick.value - BLUNDER_MARGIN);
-    if (slip) pick = slip;
+    if (slip) { pick = slip; slipped = true; }
+  }
+  st.discards = (st.discards ?? 0) + 1;
+  if (!slipped && params.bluff > 0) {
+    // Taşlamak, bluff (Uzman): a loose tile of a colour we collect, when it costs almost nothing.
+    const b = bluffPick({
+      params, rng, ranked, margin: params.lookahead >= 4 ? BLUFF_MARGIN_L4 : BLUFF_MARGIN,
+      faceOf: (x) => faceIndex(x.tile, okey), handFaces, pileLeft: Math.min(1, r.pileCount / 48),
+    });
+    if (b) { pick = b; st.bluffs = (st.bluffs ?? 0) + 1; }
   }
   const gap = second ? ranked[0].score - second.score : 1;
   const hardness = Math.max(0, 1 - gap / 0.5);

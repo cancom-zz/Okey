@@ -24,26 +24,26 @@ export const LEVELS = freeze({
   cirak: freeze({
     id: 'cirak', name: 'Çırak', en: 'Apprentice',
     params: freeze({ memory: 0.25, decay: 0.12, lookahead: 1, defense: 0, pairsBias: 0.85, blunder: 0.25,
-      takeDiscard: 0.7, gamble: 0, speed: 1.35 }),
+      takeDiscard: 0.7, gamble: 0, speed: 1.35, read: 0, bluff: 0 }),
     params101: freeze({ blunder: 0.32 }),
   }),
   kalfa: freeze({
     id: 'kalfa', name: 'Kalfa', en: 'Journeyman',
     params: freeze({ memory: 0.5, decay: 0.07, lookahead: 2, defense: 0.3, pairsBias: 0.95, blunder: 0.12,
-      takeDiscard: 0.6, gamble: 0, speed: 1.15 }),
+      takeDiscard: 0.6, gamble: 0, speed: 1.15, read: 0.3, bluff: 0 }),
     params101: freeze({ blunder: 0.22 }),
   }),
   usta: freeze({
     id: 'usta', name: 'Usta', en: 'Master',
     params: freeze({ memory: 0.7, decay: 0.04, lookahead: 3, defense: 0.6, pairsBias: 1, blunder: 0.09,
-      takeDiscard: 0.4, gamble: 0.1, speed: 1.0 }),
+      takeDiscard: 0.4, gamble: 0.1, speed: 1.0, read: 0.7, bluff: 0 }),
     // 101: opens as soon as it can (no waiting for sets over pairs, no holding), less patient, more slips.
     params101: freeze({ lookahead: 2, blunder: 0.13, gamble: 0 }),
   }),
   uzman: freeze({
     id: 'uzman', name: 'Uzman', en: 'Expert',
     params: freeze({ memory: 0.85, decay: 0.02, lookahead: 4, defense: 0.85, pairsBias: 1, blunder: 0.02,
-      takeDiscard: 0.3, gamble: 0.25, speed: 0.9 }),
+      takeDiscard: 0.3, gamble: 0.25, speed: 0.9, read: 0.9, bluff: 0.12 }),
   }),
 });
 
@@ -69,6 +69,8 @@ export function resolveParams(level, overrides = {}) {
     takeDiscard: clamp(o.takeDiscard, 0, 1, base.takeDiscard),
     gamble: clamp(o.gamble, 0, 1, base.gamble),
     speed: clamp(o.speed, 0.25, 3, base.speed),
+    read: clamp(o.read, 0, 1, base.read ?? 0),
+    bluff: clamp(o.bluff, 0, 1, base.bluff ?? 0),
   };
 }
 
@@ -147,6 +149,10 @@ export function createBot({ level = DEFAULT_LEVEL, params, seed = 1, saved } = {
       if (!event || typeof event !== 'object' || event.to !== undefined) return null;
       chatter.setSeat(mem.you);
       return chatter.chat({ type: event.type, seat: event.seat, round: event.round });
+    },
+    /** Counters for tests and tuning: classic discards and how many of them were bluffs. */
+    stats() {
+      return { discards: st.discards ?? 0, bluffs: st.bluffs ?? 0 };
     },
     /** A human has been thinking a while (online): maybe 'hadi'. */
     hurry() {

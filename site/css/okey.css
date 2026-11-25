@@ -819,3 +819,6 @@ html.noanim *,html.noanim *::before,html.noanim *::after{animation:none!importan
 .guide button{pointer-events:auto}
 
 .dstack .tile.lifted{opacity:0!important}   /* dragged off the stack: the ghost is the tile now */
+/* the guide never sits over a sheet: under the modal layer, and hidden while one is open */
+.guide{z-index:45}
+body:has(#modal .mask) .guide{display:none}
