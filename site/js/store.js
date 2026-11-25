@@ -13,7 +13,7 @@ function defaults() {
     secret: uuid(),
     name: '',
     avatar: AVATARS[Math.floor(Math.random() * 8)],
-    settings: { lang: '', sound: true, speed: 'normal', felt: 'green', soloLevel: 'kalfa', soloVariant: 'classic', hints: true, volume: 0.8, haptics: true },
+    settings: { lang: '', sound: true, speed: 'normal', felt: 'green', soloLevel: 'kalfa', soloVariant: 'classic', hints: true, volume: 0.8, haptics: true, reverseOkey: true, okeyGuard: true },
     tip: { play: 0, at: 0, next: 0, went: 0, done: false },
     // Stats (owned by stats.js; rules in shared/achievements.js). practice: solo results on this device, per
     // variant; practiceAch: id -> ms first unlocked in practice; online: the last copy fetched from the server.
@@ -43,6 +43,8 @@ function sanitize(raw) {
   if (st.soloVariant === 'classic' || st.soloVariant === '101') s.settings.soloVariant = st.soloVariant;
   if (typeof st.volume === 'number' && st.volume >= 0 && st.volume <= 1) s.settings.volume = st.volume;
   if (typeof st.haptics === 'boolean') s.settings.haptics = st.haptics;
+  if (typeof st.reverseOkey === 'boolean') s.settings.reverseOkey = st.reverseOkey;
+  if (typeof st.okeyGuard === 'boolean') s.settings.okeyGuard = st.okeyGuard;
   if (typeof st.hints === 'boolean') s.settings.hints = st.hints;
   const tp = raw.tip || {};
   for (const k of ['play', 'at', 'next', 'went']) s.tip[k] = n0(tp[k]);

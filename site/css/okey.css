@@ -822,3 +822,10 @@ html.noanim *,html.noanim *::before,html.noanim *::after{animation:none!importan
 /* the guide never sits over a sheet: under the modal layer, and hidden while one is open */
 .guide{z-index:45}
 body:has(#modal .mask) .guide{display:none}
+
+/* rack tiles: the face is its own layer, so an okey can be turned upside down in place (as players do on a real
+   ıstaka, so it isn't thrown away by mistake); the tile body and its shadow stay put */
+.rack .rt .fc{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;border-radius:inherit;transition:rotate .34s cubic-bezier(.3,.7,.3,1)}
+.rack .rt.fj .fc{justify-content:center}
+.rack .rt.rev .fc{rotate:180deg}
+@media (prefers-reduced-motion:reduce){.rack .rt .fc{transition:none}}

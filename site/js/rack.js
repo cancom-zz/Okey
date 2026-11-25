@@ -2,7 +2,8 @@
 // Tiles are absolutely positioned by slot, so moves glide by CSS transition. Drag with pointer events
 // (touch + mouse): neighbours slide aside live; drop on the rack, on your discard spot or on the centre (finish).
 import { COLS, TIERS } from './config.js';
-import { tileClass, tileInner, tileLabel, arrange as arrangeIds, layoutGroups } from './tiles.js';
+import { tileClass, tileInner, tileLabel, isOkey, arrange as arrangeIds, layoutGroups } from './tiles.js';
+import { S } from './store.js';
 import { loadRack, saveRack } from './store.js';
 import { sfx, buzz } from './sound.js';
 import { dur, reduced } from './anim.js';
@@ -49,7 +50,7 @@ export class Rack {
     this.host = host; this.opts = opts;
     this.cols = COLS; this.tiers = TIERS;
     this.slots = Array(COLS * TIERS).fill(null);
-    this.marks = []; this.flags = new Map();
+    this.marks = []; this.flags = new Map(); this.upright = new Set();
     this.preview = null; this.okey = null; this.key = null;
     this.els = new Map(); this.selected = null; this.hidden = new Set();
     this.tw = 28; this.th = 42; this.gap = 2; this.tierGap = 8; this.padX = 0;
@@ -181,7 +182,8 @@ export class Rack {
   }
 
   cls(id) {
-    return tileClass(id, this.okey) + ' rt' + (this.selected === id ? ' sel' : '') + (this.drag && this.drag.id === id && this.drag.moved ? ' drag' : '') + (this.hidden.has(id) ? ' gone' : '') + (this.flags.has(id) ? ' ' + this.flags.get(id) : '');
+    const rev = S.settings.reverseOkey !== false && isOkey(id, this.okey) && !this.upright.has(id);
+    return tileClass(id, this.okey) + ' rt' + (rev ? ' rev' : '') + (this.selected === id ? ' sel' : '') + (this.drag && this.drag.id === id && this.drag.moved ? ' drag' : '') + (this.hidden.has(id) ? ' gone' : '') + (this.flags.has(id) ? ' ' + this.flags.get(id) : '');
   }
   // a class on one tile (e.g. 'taken': the discard you picked up in 101 and must play)
   flag(id, cls) { this.flags.clear(); if (id != null) this.flags.set(id, cls); this.render(); }
@@ -202,9 +204,20 @@ export class Rack {
   hide(id, on = true) {
     if (on) this.hidden.add(id); else this.hidden.delete(id);
     const el = this.els.get(id); if (!el) return;
-    if (!on) { el.style.transition = 'none'; el.className = this.cls(id); void el.offsetWidth; el.style.transition = ''; return; }
+    if (!on) {
+      const turn = S.settings.reverseOkey !== false && isOkey(id, this.okey);
+      if (turn) this.upright.add(id);
+      el.style.transition = 'none'; el.className = this.cls(id); void el.offsetWidth; el.style.transition = '';
+      if (turn) setTimeout(() => this.turnOkeys([id]), 140);
+      return;
+    }
     el.className = this.cls(id);
   }
+  // turn these okeys upside down now (a quick 180° of the face); call after they land or after the deal's sort
+  turnOkeys(ids) {
+    for (const id of ids) { this.upright.delete(id); const el = this.els.get(id); if (el) el.className = this.cls(id); }
+  }
+  holdUpright(ids) { ids.forEach(id => this.upright.add(id)); }
   // where a tile is drawn right now (its exact pose, mid-transition included): the start of a seamless flight
   tileGeom(id) {
     const el = this.els.get(id); if (!el) return null;
@@ -222,7 +235,7 @@ export class Rack {
       if (!el) {
         el = document.createElement('div');
         el.dataset.id = id; el.setAttribute('role', 'listitem'); el.setAttribute('aria-label', tileLabel(id, this.okey));
-        el.innerHTML = tileInner(id);
+        el.innerHTML = `<span class="fc">${tileInner(id)}</span>`;
         this.box.appendChild(el); this.els.set(id, el);
         el.style.transition = 'none';
       } else if (instant) el.style.transition = 'none';

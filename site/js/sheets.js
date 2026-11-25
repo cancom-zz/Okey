@@ -20,6 +20,8 @@ export function openSettings(onChange) {
     <div class="opt"><span>${t('settings.sound')}</span>${seg('sSound', [['1', t('on')], ['0', t('off')]], S.settings.sound ? '1' : '0')}</div>
     <div class="opt"><span>${t('settings.volume')}</span><input type="range" class="vol" id="sVol" min="0" max="100" step="5" value="${Math.round((S.settings.volume ?? 0.8) * 100)}" aria-label="${esc(t('settings.volume'))}"></div>
     <div class="opt"><span>${t('settings.haptics')}</span>${seg('sHap', [['1', t('on')], ['0', t('off')]], S.settings.haptics !== false ? '1' : '0')}</div>
+    <div class="opt"><span>${t('settings.reverseOkey')}</span>${seg('sRev', [['1', t('on')], ['0', t('off')]], S.settings.reverseOkey !== false ? '1' : '0')}</div>
+    <div class="opt"><span>${t('settings.okeyGuard')}</span>${seg('sGuard', [['1', t('on')], ['0', t('off')]], S.settings.okeyGuard !== false ? '1' : '0')}</div>
     <div class="opt"><span>${t('settings.speed')}</span>${seg('sSpeed', Object.keys(SPEEDS).map(k => [k, t('speed.' + k)]), S.settings.speed)}</div>
     <div class="opt"><span>${t('settings.felt')}</span><div class="swatches" id="sFelt">${FELTS.map(f => `<button data-v="${f}" class="sw f-${f} ${S.settings.felt === f ? 'on' : ''}" aria-label="${esc(t('felt.' + f))}" title="${esc(t('felt.' + f))}"></button>`).join('')}</div></div>
     <div class="opt"><span>${t('settings.profile')}</span><button class="mini" id="sProfile">${esc(S.avatar)} ${esc(S.name || t('profile.noName'))} ›</button></div>
@@ -27,6 +29,8 @@ export function openSettings(onChange) {
   wireSeg('sLang', v => { setLang(v); openSettings(onChange); onChange && onChange('lang'); });
   wireSeg('sSound', v => { setSound(v === '1'); onChange && onChange('sound'); });
   wireSeg('sSpeed', v => { S.settings.speed = v; save(); });
+  wireSeg('sRev', v => { S.settings.reverseOkey = v === '1'; save(); onChange && onChange('reverseOkey'); });
+  wireSeg('sGuard', v => { S.settings.okeyGuard = v === '1'; save(); });
   wireSeg('sHap', v => { S.settings.haptics = v === '1'; save(); if (v === '1' && navigator.vibrate) navigator.vibrate(12); });
   const vol = $('#sVol'); vol.oninput = () => setVolume(+vol.value / 100); vol.onchange = () => sfx('stack');
   $('#sFelt').onclick = e => { const b = e.target.closest('button'); if (!b) return; S.settings.felt = b.dataset.v; save(); applyFelt(); $$('#sFelt button').forEach(x => x.classList.toggle('on', x === b)); sfx('tick'); };

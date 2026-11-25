@@ -1,6 +1,7 @@
 // The table: felt, your ıstaka at the bottom, opponents left/top/right, the pile and the indicator in the middle,
 // each seat's discard stack at its right (the four corners). Renders views, plays events as animations.
 import { t } from './i18n.js';
+import { S } from './store.js';
 import { EMOTES, BOT_AVATAR } from './config.js';
 import { $, $$, esc, toast, sheet, closeSheet, celebrate, banner, clearBanners, Sparks } from './ui.js';
 import { sfx, buzz } from './sound.js';
@@ -582,6 +583,13 @@ export class TableScreen {
 
   discardFrom(id, fromRect, sure = false) {
     if (!this.can('discard')) return false;
+    if (!sure && S.settings.okeyGuard !== false && S.settings.reverseOkey !== false && isOkey(id, this.view.round.okey)
+      && !(this.is101 && this.view.hand.length <= 1)
+      && !(this.is101 && rules101() && rules101().isIslek(id, this.view.round.table, this.view.round.okey, { swap: this.view.settings.okeySwap !== false }))) {
+      sfx('error');
+      confirmSheet(t('guard.title'), t('guard.body'), t('guard.yes'), () => this.discardFrom(id, this.rack.tileGeom(id), true));
+      return false;
+    }
     if (this.is101 && !sure) {
       const v = this.view, r = v.round, R = rules101();
       if (r.taken != null && v.hand.includes(r.taken)) { sfx('error'); toast(t('err.mustUseTaken'), 'err'); return false; }
