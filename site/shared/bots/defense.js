@@ -17,8 +17,8 @@
 
 import { faceColor, faceNum, runNeighbors, groupNeighbors, FACES } from './faces.js';
 
-export const DEFENSE_CAP = 0.5;       // defense never outweighs breaking a complete set (or a good partial)
-export const DEFENSE_BONUS_CAP = 0.2; // how much a known-safe tile is preferred
+export const DEFENSE_CAP = 1.0;       // defense never outweighs breaking a complete set
+export const DANGER_SCALE = 1.0;      // danger in hand-value units (one tile in a set = 1), times `defense`
 export const LATE_BOOST = 1.6;        // `late`: urgency and cap multiplier once the pile is a quarter full
 export const FULL_READ = 0.5;         // from here on: passes, throws, dumped colours/numbers, previous player
 export const TELL_READ = 0.6;         // from here on: avoid discards that tell
@@ -31,10 +31,13 @@ const runDist = (a, b) => {
 };
 
 /**
- * Defense: penalty for throwing face f, judged from the next player's remembered behaviour. Relative: an
- * unremarkable tile costs nothing, a tile next to what they picked up costs more, a tile they passed on or
- * threw (or of a colour / number they keep dumping) is slightly preferred. Grows as the pile shrinks, as they
- * pick up more, and (`urgent`, 101) when they are close to going out.
+ * Defense: penalty for throwing face f. Its core is how likely an unknown hand can use the tile: the live
+ * copies of its run neighbours and of the same number in other colours (dead neighbours, group-dead numbers
+ * and end tiles come out safe), turned into a chance with the share of unseen tiles the next player holds.
+ * Then the next player's remembered behaviour: tiles next to what they picked up from us are more dangerous;
+ * the same face as something they threw or passed on is safe; (full readers) colours and numbers they keep
+ * dumping are safer. It weighs more as the pile shrinks, as they take discards, and (`urgent`, 101) when
+ * they are close to going out.
  */
 export function dangerFn(view, mem, params, live, { pileStart = 48, late = false, urgent = 1 } = {}) {
   if (!(params.defense > 0)) return null;
@@ -42,40 +45,45 @@ export function dangerFn(view, mem, params, live, { pileStart = 48, late = false
   const full = (params.read ?? 0) >= FULL_READ;
   const nextSeat = (view.you + 1) % 4;
   const picks = mem.facesOf(mem.picks[nextSeat], okey);
-  const passed = full ? mem.facesOf(mem.passed[nextSeat], okey) : [];
-  const throws = full ? mem.facesOf(mem.throws[nextSeat], okey) : [];
+  const passed = mem.facesOf(mem.passed[nextSeat], okey);
+  const throws = mem.facesOf(mem.throws[nextSeat], okey);
   const dumpColor = [0, 0, 0, 0];
   const dumpNum = new Array(14).fill(0);
-  for (const g of throws) { dumpColor[faceColor(g)]++; dumpNum[faceNum(g)]++; }
+  if (full) for (const g of throws) { dumpColor[faceColor(g)]++; dumpNum[faceNum(g)]++; }
+  let unknown = 0;
+  for (let f = 0; f < FACES; f++) unknown += live[f];
+  const handShare = Math.min(1, (view.seats[nextSeat]?.handCount || 14) / Math.max(1, unknown));
   const pileLeft = Math.max(0, Math.min(1, view.round.pileCount / pileStart));
-  let urgency = Math.min(1.3, 0.3 + 0.7 * (1 - pileLeft) + 0.1 * picks.length) * urgent;
+  let urgency = (0.7 + 0.6 * (1 - pileLeft) + 0.15 * Math.min(4, picks.length)) * urgent;
   // `late` (the strongest level): defend much harder in the last quarter of the pile.
   const lateBoost = late && pileLeft <= 0.25 ? LATE_BOOST : 1;
   urgency *= lateBoost;
   const cache = new Map();
   return (f) => {
     if (cache.has(f)) return cache.get(f);
+    // How many live tiles could join this one (the next player may hold some of them).
+    let conn = 0;
+    for (const { f: g, d } of runNeighbors(f)) conn += live[g] * (d === 1 ? 1 : 0.5);
+    for (const g of groupNeighbors(f)) conn += live[g] * 0.6;
+    let danger = 1 - Math.exp(-conn * handShare);
+    // What they picked up from us: they collect right there.
     let want = 0;
     for (const g of picks) {
       const rd = runDist(f, g);
-      if (g === f) want += 0.1;
-      else if (rd === 1) want += 0.5;
-      else if (rd === 2) want += 0.25;
-      else if (faceNum(g) === faceNum(f)) want += 0.4;
+      if (g === f) want += 0.2;
+      else if (rd === 1) want += 0.8;
+      else if (rd === 2) want += 0.4;
+      else if (faceNum(g) === faceNum(f)) want += 0.6;
     }
-    // A tile with no live neighbours is hard for anyone to use.
-    let conn = 0;
-    for (const { f: g, d: dist } of runNeighbors(f)) if (dist === 1) conn += live[g];
-    for (const g of groupNeighbors(f)) conn += live[g];
-    if (conn === 0) want *= 0.3;
-    // Colours and numbers they keep throwing away are safe-ish to feed.
-    if (dumpColor[faceColor(f)] >= 3) want *= 0.75;
-    if (dumpNum[faceNum(f)] >= 2) want *= 0.8;
-    let safe = 0;
-    if (passed.includes(f)) safe += 0.3;
-    if (throws.includes(f)) safe += 0.2;
-    const pen = params.defense * urgency * 0.6 * (want - safe);
-    const out = Math.max(-DEFENSE_BONUS_CAP, Math.min(DEFENSE_CAP * lateBoost, pen));
+    danger += want;
+    // What they threw or let pass: safe (that face), safer (around it).
+    if (throws.includes(f) || passed.includes(f)) danger *= 0.15;
+    else if (full) {
+      for (const g of throws) if (runDist(f, g) === 1) { danger *= 0.8; break; }
+      if (dumpColor[faceColor(f)] >= 3) danger *= 0.75;
+      if (dumpNum[faceNum(f)] >= 2) danger *= 0.8;
+    }
+    const out = Math.min(DEFENSE_CAP * lateBoost, params.defense * DANGER_SCALE * urgency * danger);
     cache.set(f, out);
     return out;
   };

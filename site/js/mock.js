@@ -3,12 +3,22 @@
 // Bots here are dumb on purpose. Delete this file once local.js is wired everywhere (net.js falls back to it).
 //
 // URL options (dev/tests): ?mock=1  &fast=1  &scenario=reveal|pairs|mywin|match|lobby|pileEmpty|full
+//   finishes (round 1, the dealer finishes on the first turn): reveal / match (a bot, sets), pairs (a bot, pairs),
+//   okeyfin (a bot, sets, finishing with an okey), bothfin (a bot, pairs + okey); mywin (you, by hand),
+//   myokey / mypairs / myboth (you, played for you a moment after the deal: the slam films).
 import { isOkey, faceOf, validSetLite, okeyFace, color, num, isFalseJoker } from './tiles.js';
 
 const tid = (c, n, copy = 0) => c * 26 + copy * 13 + (n - 1);
 const NAMES = ['Ayşe', 'Mehmet', 'Zeynep', 'Mustafa', 'Elif', 'Hasan', 'Fatma', 'Ali'];
 const BOT_NAMES = { cirak: ['Çırak Cem', 'Çırak Ece'], kalfa: ['Kalfa Kaan', 'Kalfa Selin'], usta: ['Usta Rıza', 'Usta Nermin'], uzman: ['Uzman Tahsin', 'Uzman Leyla'] };
 const BOT_AV = { cirak: '🐣', kalfa: '🦊', usta: '🦉', uzman: '🐺' };
+// rigged finishing hands: [who, kind, okey finish, played automatically]
+const FIN = { reveal: ['bot', 'sets', 0], match: ['bot', 'sets', 0], pairs: ['bot', 'pairs', 0], okeyfin: ['bot', 'sets', 1], bothfin: ['bot', 'pairs', 1],
+  mywin: ['me', 'sets', 0, 0], myokey: ['me', 'sets', 1, 1], mypairs: ['me', 'pairs', 0, 1], myboth: ['me', 'pairs', 1, 1] };
+const SETS = [tid(0, 1), tid(0, 2), tid(0, 3), tid(0, 4), tid(1, 7), tid(2, 7), tid(3, 7), tid(3, 9), tid(3, 10), tid(3, 11), tid(3, 12), tid(2, 11), tid(2, 12), tid(2, 13), tid(1, 5)];
+const SETS_G = [[tid(0, 1), tid(0, 2), tid(0, 3), tid(0, 4)], [tid(1, 7), tid(2, 7), tid(3, 7)], [tid(3, 9), tid(3, 10), tid(3, 11), tid(3, 12)], [tid(2, 11), tid(2, 12), tid(2, 13)]];
+const pairsHand = okey => [tid(0, 3), tid(0, 3, 1), tid(1, 9), tid(1, 9, 1), tid(2, 12), tid(2, 12, 1), tid(3, 1), tid(3, 1, 1), tid(0, 10), tid(0, 10, 1), tid(2, 5), tid(2, 5, 1), okey ? tid(3, 8, 1) : 104, tid(3, 8), tid(1, 2)];
+const pairsGroups = okey => { const h = pairsHand(okey); return [0, 2, 4, 6, 8, 10, 12].map(i => [h[i], h[i + 1]]); };
 
 function shuffle(a) {
   for (let i = a.length - 1; i > 0; i--) {
@@ -110,24 +120,34 @@ export function createMockTable({ code = 'PRAKTK', scenario = '', fast = false, 
 
   function startRound() {
     st.roundNo++;
-    st.dealer = st.dealer < 0 ? (scenario === 'mywin' || scenario === 'full' ? (st.you ?? 0) : (scenario ? 1 : Math.floor(Math.random() * 4))) : (st.dealer + 1) % 4;
+    const fin = FIN[scenario];
+    st.dealer = st.dealer < 0 ? ((fin && fin[0] === 'me') || scenario === 'full' || scenario === 'forgot' ? (st.you ?? 0) : (scenario ? 1 : Math.floor(Math.random() * 4))) : (st.dealer + 1) % 4;
     let bag = shuffle([...Array(106).keys()]);
     const hands = [[], [], [], []];
     let rigged = null;
-    if ((scenario === 'reveal' || scenario === 'match' || scenario === 'pairs' || scenario === 'mywin') && st.roundNo === 1) {
-      const who = scenario === 'mywin' ? st.you : st.dealer;
-      rigged = scenario === 'pairs'
-        ? [tid(0, 3), tid(0, 3, 1), tid(1, 9), tid(1, 9, 1), tid(2, 12), tid(2, 12, 1), tid(3, 1), tid(3, 1, 1), tid(0, 10), tid(0, 10, 1), tid(2, 5), tid(2, 5, 1), 104, tid(3, 8), tid(1, 2)]
-        : [tid(0, 1), tid(0, 2), tid(0, 3), tid(0, 4), tid(1, 7), tid(2, 7), tid(3, 7), tid(3, 9), tid(3, 10), tid(3, 11), tid(3, 12), tid(2, 11), tid(2, 12), tid(2, 13), tid(1, 5)];
+    if (fin && st.roundNo === 1) {
+      const who = fin[0] === 'me' ? st.you : st.dealer;
+      rigged = fin[1] === 'pairs' ? pairsHand(fin[2]) : SETS.slice();
       hands[who] = rigged.slice();
       bag = bag.filter(x => !rigged.includes(x));
+      if (fin[2]) bag = bag.filter(x => x !== rigged[rigged.length - 1] - 1);   // kept back for the indicator
     }
     for (let s = 0; s < 4; s++) { const want = s === st.dealer ? 15 : 14; while (hands[s].length < want) hands[s].push(bag.pop()); }
     // indicator: never a false joker, never makes the rigged hand's tiles okeys
-    let ii = bag.findIndex(x => !isFalseJoker(x) && !(rigged && rigged.some(y => isOkey(y, okeyFace(x)))));
-    const indicator = bag.splice(ii, 1)[0];
+    // (an okey finish: the indicator sits one below the finishing tile, so that tile is the okey)
+    const finTile = rigged ? rigged[rigged.length - 1] : null;
+    const ii = bag.findIndex(x => !isFalseJoker(x) && !(rigged && rigged.some(y => isOkey(y, okeyFace(x)))));
+    const indicator = rigged && fin[2] ? finTile - 1 : bag.splice(ii, 1)[0];
     if (scenario === 'reveal' && rigged && st.roundNo === 1) {
       // make the last rigged tile... an okey when discarded? keep it simple: a normal finish.
+    }
+    if (scenario === 'forgot' && st.roundNo === 1 && st.you != null) {   // you hold the gösterge's other copy (to forget it)
+      const copy = indicator % 26 < 13 ? indicator + 13 : indicator - 13, mine = hands[st.you];
+      if (!mine.includes(copy)) {
+        const h = hands.find(x => x.includes(copy)), out = mine[0];
+        if (h) h[h.indexOf(copy)] = out; else bag[bag.indexOf(copy)] = out;
+        mine[0] = copy;
+      }
     }
     st.r = {
       hands, pile: bag, indicator, okey: okeyFace(indicator), discards: [[], [], [], []], shown: [false, false, false, false],
@@ -142,6 +162,10 @@ export function createMockTable({ code = 'PRAKTK', scenario = '', fast = false, 
       ...(st.you != null ? [{ type: 'dealt', to: st.you, hand: hands[st.you].slice() }] : []),
     ]);
     scheduleBot(3200);
+    if (rigged && fin[0] === 'me' && fin[3]) {
+      const r = st.r;
+      later(5600, () => { if (st.r === r && r.turn === st.you && st.phase === 'playing') act(st.you, { type: 'finish', tile: finTile, groups: fin[1] === 'pairs' ? pairsGroups(fin[2]) : SETS_G }); });
+    }
   }
 
   function setTurnClock() {
@@ -249,12 +273,11 @@ export function createMockTable({ code = 'PRAKTK', scenario = '', fast = false, 
         act(seat, { type: 'draw', from: wants && Math.random() < 0.6 ? 'discard' : 'pile' });
       } else {
         // rigged scenarios: the dealer finishes straight away
-        if ((scenario === 'reveal' || scenario === 'match' || scenario === 'pairs') && st.roundNo === 1 && seat === st.dealer) {
-          const tile = scenario === 'pairs' ? tid(1, 2) : tid(1, 5);
-          const groups = scenario === 'pairs'
-            ? [[tid(0, 3), tid(0, 3, 1)], [tid(1, 9), tid(1, 9, 1)], [tid(2, 12), tid(2, 12, 1)], [tid(3, 1), tid(3, 1, 1)], [tid(0, 10), tid(0, 10, 1)], [tid(2, 5), tid(2, 5, 1)], [104, tid(3, 8)]]
-            : [[tid(0, 1), tid(0, 2), tid(0, 3), tid(0, 4)], [tid(1, 7), tid(2, 7), tid(3, 7)], [tid(3, 9), tid(3, 10), tid(3, 11), tid(3, 12)], [tid(2, 11), tid(2, 12), tid(2, 13)]];
-          if (scenario === 'pairs') { // make the false joker pair valid: it stands for the okey face
+        const fin = FIN[scenario];
+        if (fin && fin[0] === 'bot' && st.roundNo === 1 && seat === st.dealer) {
+          const tile = fin[1] === 'pairs' ? tid(1, 2) : tid(1, 5);
+          const groups = fin[1] === 'pairs' ? pairsGroups(fin[2]) : SETS_G.map(g => g.slice());
+          if (fin[1] === 'pairs' && !fin[2]) { // make the false joker pair valid: it stands for the okey face
             const fj = faceOf(104, r.okey); const mate = hand.find(x => x < 104 && color(x) === fj.color && num(x) === fj.num);
             if (!mate) { groups[6] = [tid(3, 8), tid(3, 8, 1)]; const at = hand.indexOf(104); const other = r.hands.findIndex((h, i) => i !== seat && h.includes(tid(3, 8, 1))); if (other >= 0) { r.hands[other][r.hands[other].indexOf(tid(3, 8, 1))] = 104; } else r.pile[r.pile.indexOf(tid(3, 8, 1))] = 104; hand[at] = tid(3, 8, 1); }
           }

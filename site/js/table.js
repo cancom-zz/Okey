@@ -640,8 +640,7 @@ export class TableScreen {
     if (!res && engineSure) { shake($('.center', this.root)); sfx('error'); toast(t('finish.cannot'), 'err'); return false; }
     const groups = res ? res.groups : this.rack.groups().map(g => g.filter(x => x !== id)).filter(g => g.length);
     this.pendingDiscard = id; this.rack.hide(id, true);
-    const okey = this.view.round.okey;
-    void fromRect; void okey;   // the reveal flies it, with the rest of the hand
+    this.finFrom = toGeo(fromRect) || this.rack.tileGeom(id);   // a slam rises from where the tile was let go
     this.act({ type: 'finish', tile: id, groups });
     return true;
   }
@@ -738,10 +737,12 @@ export class TableScreen {
       case 'discard': {
         const p = this.pos(ev.seat), d = this.disp;
         const st = d.disc[ev.seat];
+        const forgot = ev.seat === me ? this.forgotCopy(this.view) : null;   // my first turn ends without showing the gösterge I held
         if (ev.seat === me && this.pendingDiscard === ev.tile) {
           this.pendingDiscard = null;
           d.count[me]--; st.top = ev.tile; st.count++;
           await wait(120);
+          if (forgot != null) this.sadMoment(forgot, ev.tile);
           return;
         }
         // the tile lifts off their rack, turns face up early and arcs onto their stack
@@ -754,6 +755,7 @@ export class TableScreen {
         const top = this.discTop(p), to = this.discGeom(p);
         await fly({ id: ev.tile, okey, from, to, faceFrom: ev.seat === me, faceTo: true, flipAt: 'early', ms: 400, arc: ev.seat === me ? 0.06 : 0.26,
           onLand: () => { top.style.visibility = ''; if (ev.seat !== me) land(top); sfx(st.count > 1 ? 'stack' : 'felt'); } });
+        if (forgot != null) this.sadMoment(forgot, ev.tile);
         return;
       }
       case 'showIndicator': return this.showIndicatorFx(ev, true);
@@ -843,6 +845,7 @@ export class TableScreen {
   // slide into order; an okey turns upside down last. A tap skips it; reduced motion skips it.
   async deal(ev, next) {
     this.dealing = true;
+    closeGuide(false);
     this.view = next;
     this.newRound(next);
     const me = next.you, okey = next.round.okey, hand = (next.hand || []).slice();
@@ -1017,6 +1020,23 @@ export class TableScreen {
     if (okeys.length) { this.rack.turnOkeys(okeys); sfx('flip'); await wait(340); }
   }
 
+  // The gösterge you forgot: classic only, my own first turn, I held the other copy and never showed it.
+  // Only ever about my own hand (a bot's forgetting would leak its tiles), once a round.
+  forgotCopy(v) {
+    const r = v && v.round, me = v && v.you;
+    if (this.is101 || !r || me == null || !v.hand || !r.firstTurn || !r.firstTurn[me] || (v.seats[me] || {}).showedIndicator || this.sadRound === this.roundKey) return null;
+    const c = v.hand.find(x => x !== r.indicator && x < 104 && color(x) === color(r.indicator) && num(x) === num(r.indicator));
+    return c == null ? null : c;
+  }
+  // a small sad moment: the copy goes grey-blue and droops, a "wah-wah", a gentle toast
+  sadMoment(id, discarded) {
+    this.sadRound = this.roundKey;
+    const el = id === discarded ? this.discTop(0) : this.rack.els.get(id);
+    if (el) { el.classList.remove('sad'); void el.offsetWidth; el.classList.add('sad'); setTimeout(() => el.classList.remove('sad'), 2700); }
+    sfx('wah');
+    toast(esc(t('sad.forgot')), 'sad', 3200);
+  }
+
   showIndicatorFx(ev, animate) {
     const p = this.pos(ev.seat), el = $(`.seat.p${p}`, this.root);
     const s = this.view.seats[ev.seat] || {};
@@ -1044,10 +1064,122 @@ export class TableScreen {
 
   // Someone finished: the finishing tile goes to the middle with a gold glow, then their rack tilts up and shows the hand.
   async finishFx(ev, next) {
-    sfx(ev.okeyFinish ? 'okey' : 'settle');
+    closeGuide(false);
+    this.forgotFin = ev.seat === next.you && this.forgotCopy(this.view) != null;
+    // tier 2: an okey finish or a pairs finish slams; tier 3: pairs and an okey together slams twice
+    const tier = ev.kind === 'pairs' && ev.okeyFinish ? 3 : ev.okeyFinish || ev.kind === 'pairs' ? 2 : 1;
+    this.slamTier = tier > 1 ? tier : 0;
+    if (tier > 1) { try { await this.slam(ev, next, tier); } catch (e) { console.error(e); } }
+    else sfx('settle');
     this.view = next;
     await this.showResult(true, ev);
   }
+
+  // The SLAM. The finishing tile rises over the middle, holds a beat and smashes down: the table shakes, a shockwave
+  // rings out, felt dust flies, every tile jumps, the pile rattles, a deep wooden thud; then the headline and a stamped
+  // multiplier. Full force for me, ~70% for someone else (their tile flies over from their rack first). Speed trims
+  // the hold, never the impact; reduced motion gets a static banner and the sound; a tap skips to the story.
+  async slam(ev, next, tier) {
+    const mine = ev.seat === next.you, k = mine ? 1 : 0.7, okey = next.round && next.round.okey;
+    const mult = this.is101 ? (ev.multiplier || (tier === 3 ? 4 : 2)) : tier === 3 ? 4 : 2;
+    const head = t(tier === 3 ? 'slam.both' : ev.okeyFinish ? 'slam.okey' : 'slam.pairs');
+    const cr = $('.center', this.root).getBoundingClientRect(), C = { x: cr.left + cr.width / 2, y: cr.top + cr.height / 2 };
+    const fr = this.felt.getBoundingClientRect();
+    const layer = document.createElement('div'); layer.className = 'slam' + (tier === 3 ? ' t3' : ''); document.body.appendChild(layer);
+    this.slamLayer = layer; this.slamming = true;
+    const raw = ms => (skipped() ? 0 : ms);                       // the impact keeps its pace at any speed
+    const buzzP = p => { try { if (S.settings.haptics && navigator.vibrate) navigator.vibrate(p); } catch { /* not supported */ } };
+    const headline = () => {
+      const h = document.createElement('div'); h.className = 'slamhead';
+      h.style.left = C.x + 'px'; h.style.top = Math.max(fr.top + 40, C.y - Math.min(110, cr.height * 0.42)) + 'px';
+      h.innerHTML = `<b>${esc(head)}</b><span class="stamp">×${mult}</span>`;
+      layer.appendChild(h); return h;
+    };
+    try {
+      if (reduced()) {
+        headline(); sfx('thud', { level: k }); if (tier === 3) sfx('ooh'); if (mine) buzzP([30, 40, 60]);
+        if (!document.documentElement.classList.contains('noanim')) await sleep(raw(1400));
+        return;
+      }
+      const S0 = Math.round(Math.min(84, Math.max(46, this.dw * 1.7)) * (mine ? 1 : 0.9)), SH = S0 * 1.5;
+      const src = mine ? (this.finFrom || this.rack.tileGeom(ev.tile)) : this.oppTake(this.pos(ev.seat));
+      if (mine) this.rack.hide(ev.tile, true);
+      this.finFrom = null;
+      const tile = document.createElement('div');
+      tile.className = 'slamtile ' + tileClass(ev.tile, okey);
+      tile.innerHTML = tileInner(ev.tile);
+      tile.style.cssText = `--tw:${S0}px;left:${C.x - S0 / 2}px;top:${C.y - SH / 2}px`;
+      layer.appendChild(tile);
+      const from = src ? `translate(${src.cx - C.x}px,${src.cy - C.y}px) rotate(${src.rot || 0}deg) scale(${(src.w || S0) / S0})` : 'translate(0,40px) scale(.6)';
+      const H = Math.min(120, cr.height * 0.45 + 30) * (0.75 + 0.25 * k);
+      const up = (h, s, r) => `translate(0px,${-h}px) rotate(${r}deg) scale(${s})`;
+      // rise (and, for someone else, the flight over from their rack)
+      await tile.animate([{ transform: from, opacity: 0.4 }, { transform: up(H, 1.12, -5), opacity: 1 }], { duration: dur(mine ? 420 : 560), easing: 'cubic-bezier(.2,.8,.3,1)', fill: 'forwards' }).finished.catch(() => {});
+      const smash = async (h, s, hold, ms, level, last) => {
+        // the beat: it winds up, trembling
+        await tile.animate([{ transform: up(h, 1.12, -5) }, { transform: up(h + 6, s, -7), offset: 0.5 }, { transform: up(h + 10, s * 1.02, -6) }],
+          { duration: dur(hold), easing: 'ease-in-out', fill: 'forwards' }).finished.catch(() => {});
+        await tile.animate([{ transform: up(h + 10, s * 1.02, -6) }, { transform: 'translate(0px,0px) rotate(0deg) scale(1)' }],
+          { duration: raw(ms), easing: 'cubic-bezier(.6,0,1,.6)', fill: 'forwards' }).finished.catch(() => {});
+        this.impact(C, level * k, last && tier === 3, raw);
+        if (mine) buzzP(last ? [30, 40, 60] : [24]); else if (last) buzzP([16]);
+      };
+      if (tier === 3) {
+        await smash(H * 0.7, 1.14, 260, 160, 0.65, false);
+        await tile.animate([{ transform: 'translate(0px,0px) rotate(0deg) scale(1)' }, { transform: up(H * 1.15, 1.12, -5) }], { duration: raw(330), easing: 'cubic-bezier(.2,.8,.3,1)', fill: 'forwards' }).finished.catch(() => {});
+        await smash(H * 1.15, 1.2, 240, 120, 1.25, true);
+      } else await smash(H, 1.18, 320, 140, 1, true);
+      // the headline lands with the hit, then the multiplier is stamped on
+      const h = headline();
+      h.querySelector('b').animate([{ transform: 'scale(2.2)', opacity: 0 }, { transform: 'scale(.94)', opacity: 1, offset: 0.7 }, { transform: 'scale(1)', opacity: 1 }], { duration: raw(380), easing: 'cubic-bezier(.3,0,.3,1)', fill: 'both' });
+      const stamp = h.querySelector('.stamp');
+      stamp.animate([{ transform: 'rotate(-14deg) scale(2.6)', opacity: 0 }, { transform: 'rotate(-14deg) scale(.92)', opacity: 1, offset: 0.75 }, { transform: 'rotate(-14deg) scale(1)', opacity: 1 }],
+        { duration: raw(240), delay: raw(tier === 3 ? 420 : 340), easing: 'cubic-bezier(.5,0,.8,.6)', fill: 'both' });
+      sleep(raw(tier === 3 ? 600 : 520)).then(() => { if (!skipped()) { sfx('thud', { level: 0.35 }); this.felt.animate([{ translate: '0 0' }, { translate: '0 2px' }, { translate: '0 0' }], { duration: 120 }); } });
+      await sleep(dur(tier === 3 ? 1500 : 1050) + raw(300));
+      // clear the stage; the tile stays for the reveal to pick up
+      h.animate([{ opacity: 1 }, { opacity: 0, transform: 'translateY(-10px)' }], { duration: dur(220), fill: 'forwards' });
+      this.slamAt = { cx: C.x, cy: C.y, w: S0, h: SH, rot: 0 };
+      await sleep(dur(200));
+    } finally {
+      this.slamming = false; setSkip(false);
+    }
+  }
+  // the hit: shake, shockwave, felt dust, every tile on the table jumps, the pile rattles, the thud
+  impact(C, level, big, raw) {
+    const layer = this.slamLayer; if (!layer) return;
+    sfx('thud', { level: Math.min(1.2, level) });
+    if (big) sfx('ooh');
+    const A = 7 * level, n = big ? 9 : 7, steps = [];
+    for (let i = 0; i <= n; i++) { const a = A * (1 - i / n) ** 1.6, s = i % 2 ? 1 : -1; steps.push({ translate: i === n ? '0 0' : `${s * a * 0.6}px ${a * (i % 3 === 0 ? 1 : -0.7)}px` }); }
+    $('.tbl', this.root).animate(steps, { duration: raw(big ? 440 : 260), easing: 'linear' });
+    for (let w = 0; w < (big ? 2 : 1); w++) {
+      const ring = document.createElement('div'); ring.className = 'shock'; ring.style.left = C.x + 'px'; ring.style.top = C.y + 'px';
+      ring.style.setProperty('--r', Math.round(150 * Math.min(1.3, level) + w * 60) + 'px'); layer.appendChild(ring);
+      ring.animate([{ transform: 'translate(-50%,-50%) scale(.1)', opacity: 0.95 }, { transform: 'translate(-50%,-50%) scale(1)', opacity: 0 }], { duration: raw(560 + w * 140), delay: raw(w * 110), easing: 'cubic-bezier(.1,.7,.3,1)', fill: 'both' })
+        .finished.then(() => ring.remove(), () => ring.remove());
+    }
+    const dust = Math.round(14 + 10 * level);
+    for (let i = 0; i < dust; i++) {
+      const d = document.createElement('i'); d.className = 'dust' + (i % 3 ? '' : ' cream'); d.style.left = C.x + 'px'; d.style.top = C.y + 'px';
+      layer.appendChild(d);
+      const a = Math.random() * Math.PI * 2, r = (40 + Math.random() * 90) * Math.min(1.3, level), dx = Math.cos(a) * r, dy = Math.sin(a) * r * 0.6;
+      d.animate([{ transform: 'translate(-50%,-50%) scale(1)', opacity: 0.9 }, { transform: `translate(calc(-50% + ${dx * 0.7}px),calc(-50% + ${dy * 0.7 - 18}px)) scale(.9)`, opacity: 0.8, offset: 0.5 },
+        { transform: `translate(calc(-50% + ${dx}px),calc(-50% + ${dy + 6}px)) scale(.4)`, opacity: 0 }], { duration: raw(520 + Math.random() * 260), easing: 'cubic-bezier(.2,.7,.4,1)', fill: 'both' })
+        .finished.then(() => d.remove(), () => d.remove());
+    }
+    // everything on the table hops (racks tile by tile; the pile's stacks rattle)
+    const hop = (el, h, delay) => el.animate([{ translate: '0 0' }, { translate: `0 ${-h}px`, offset: 0.35 }, { translate: '0 1px', offset: 0.75 }, { translate: '0 0' }], { duration: raw(260), delay: raw(delay), easing: 'ease-out', composite: 'add' });
+    $$('.rack .rt', this.root).forEach(el => hop(el, (2 + Math.random() * 3) * level, Math.random() * 50));
+    $$('.orack, .ds .dstack, .indt, .okt', this.root).forEach(el => hop(el, 2.5 * level, Math.random() * 40));
+    $$('#pile .pst', this.root).forEach(el => el.animate([{ rotate: '0deg' }, { rotate: `${(Math.random() - 0.5) * 8 * level}deg`, translate: `0 ${-2 * level}px` }, { rotate: `${(Math.random() - 0.5) * 4}deg` }, { rotate: '0deg' }], { duration: raw(320), delay: raw(Math.random() * 60) }));
+    if (big) {
+      const fl = document.createElement('div'); fl.className = 'slamflash'; layer.appendChild(fl);
+      fl.animate([{ opacity: 0 }, { opacity: 1, offset: 0.15 }, { opacity: 0 }], { duration: raw(900), fill: 'both' }).finished.then(() => fl.remove(), () => fl.remove());
+      Sparks.burst(70, C.x, C.y);
+    } else if (level >= 0.9) Sparks.burst(22, C.x, C.y);
+  }
+  endSlam() { if (this.slamLayer) { this.slamLayer.remove(); this.slamLayer = null; } this.slamAt = null; }
 
   // ---- the result: the winner's rack tilts up, tiles turn over group by group, then the story ----
   async showResult(animate, ev) {
@@ -1063,7 +1195,7 @@ export class TableScreen {
       ${win ? `<div class="rv-who"><span class="av">${esc(win.avatar || '🙂')}</span><b>${esc(win.name || '')}</b></div>
       <div class="rv-rack"><div class="rv-groups">${handGroupsHTML(v)}</div>
         <div class="rv-fin"><small>${t('result.finishTile')}</small>${tileHTML(r.tile, okey, 'rv fin')}</div></div>` : ''}
-      <div class="rhead"><div class="rverd">${esc(story.v)}</div><div class="rline">${esc(story.line)}${story.extra ? ' ' + esc(story.extra) : ''}</div></div>
+      <div class="rhead"><div class="rverd">${esc(story.v)}</div><div class="rline">${esc(story.line)}${story.extra ? ' ' + esc(story.extra) : ''}</div>${this.forgotFin && r.winner === v.you ? `<div class="rsad">${esc(t('sad.note'))}</div>` : ''}</div>
       ${this.is101 ? rows101(v) : deltasHTML(v)}
       <div class="rv-acts">
         ${isMatch ? `<button class="btn" id="rvHome">${t('result.leave')}</button><button class="btn gold" id="rvNext">${t('result.rematch')}</button>`
@@ -1104,8 +1236,8 @@ export class TableScreen {
       });
       if (finEl) {
         if (fin) fin.style.opacity = '';
-        const from = src(r.tile);
-        flights.push(fly({ id: r.tile, okey, from, to: geomOf(finEl), faceFrom: mine, faceTo: true, flipAt: 'early', ms: 440, arc: 0.3, cls: 'golden', delay: k * 42 + 160,
+        const slamAt = this.slamAt, from = slamAt || src(r.tile);
+        flights.push(fly({ id: r.tile, okey, from, to: geomOf(finEl), faceFrom: mine || !!slamAt, faceTo: true, onLaunch: () => this.endSlam(), flipAt: 'early', ms: 440, arc: 0.3, cls: 'golden', delay: k * 42 + 160,
           onLand: () => { finEl.style.visibility = ''; land(finEl, 1.4); sfx('clack'); } }));
       }
       await Promise.all(flights);
@@ -1114,9 +1246,11 @@ export class TableScreen {
       rest.forEach((x, i) => { x.style.opacity = ''; x.animate([{ transform: 'translateY(10px)', opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: dur(320), delay: dur(i * 120), fill: 'backwards' }); });
     }
     void card;
+    this.endSlam();
     if (r.winner != null) {
       const big = r.okeyFinish || r.kind === 'pairs' || r.elden || (r.multiplier || 1) > 1;
-      if (won) {
+      if (this.slamTier) { if (won) tipNote(true); }   // the slam was the celebration
+      else if (won) {
         tipNote(true);
         if (!isMatch) celebrate(big ? story.v : t('cele.win'), big ? t('cele.bigSub') : t('cele.winSub'), { sound: r.okeyFinish ? 'okey' : 'win', sparks: big ? 60 : 30 });
       } else if (big && !isMatch) {
@@ -1140,6 +1274,7 @@ export class TableScreen {
     tipCheck();
   }
   hideResult() {
+    this.endSlam(); this.slamTier = 0;
     const el = $('#result', this.root); el.hidden = true; el.innerHTML = '';
     this.felt.classList.remove('resulting');
   }

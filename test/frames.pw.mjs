@@ -49,7 +49,7 @@ async function untilMyTurn(p, ms = 30000) {
 
 const q = variant === '101' ? 'variant=101&' : '';
 // 1. the deal, then bots playing
-{
+if (variant !== 'slam') {
   const p = await page();
   await p.goto(`http://localhost:${PORT}/?${q}#/`);
   await p.waitForSelector('#hSolo');
@@ -77,8 +77,18 @@ const q = variant === '101' ? 'variant=101&' : '';
   }
   await p.close();
 }
+// slams: okey / pairs / pairs+okey finishes by a bot and by me (mock scenarios), real timings
+if (variant === 'slam') {
+  for (const sc of (process.argv[4] || 'okeyfin,pairs,bothfin,myokey,mypairs,myboth').split(',')) {
+    const p = await page();
+    await p.goto(`http://localhost:${PORT}/?mock=1&scenario=${sc}#/solo`);
+    await p.waitForFunction(() => document.querySelector('.slam'), null, { timeout: 20000, polling: 50 }).catch(() => console.log(sc, ': no slam seen'));
+    await sheet(sc, await grab(p, sc, 32, 40), 8);
+    await p.close();
+  }
+}
 // 2. a finish (mock: a bot finishes on its first turn), real timings
-if (variant !== '101') {
+if (variant !== '101' && variant !== 'slam') {
   const p = await page();
   await p.goto(`http://localhost:${PORT}/?mock=1&scenario=reveal#/solo`);
   await p.waitForTimeout(3200);
