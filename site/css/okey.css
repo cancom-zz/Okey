@@ -169,14 +169,9 @@ input.bad,.field input.bad{border-color:#ff8a8a!important;animation:wob .3s}
 /* ---------- flying pieces ---------- */
 #fx{position:fixed;inset:0;pointer-events:none;z-index:40}
 .fly{position:fixed;pointer-events:none;perspective:600px;will-change:transform}
-.fly .flipper{position:relative;width:100%;height:100%;transform-style:preserve-3d}
-.fly .flipper>.tile{position:absolute;inset:0;width:100%;height:100%;backface-visibility:hidden;-webkit-backface-visibility:hidden}
-.fly .flipper>.rear{transform:rotateY(180deg)}
+.fly .flipper{position:relative;width:100%;height:100%}
+.fly .flipper>.tile{position:absolute;inset:0;width:100%;height:100%}
 .fly.golden .front{box-shadow:0 0 0 2px #ffe39a,0 0 26px 6px rgba(255,200,90,.75),0 10px 20px rgba(0,0,0,.5)}
-.fly.stack5{width:var(--tw);height:calc(var(--tw)*1.5)}
-.fly.stack5 i{position:absolute;left:0;top:calc(var(--i)*-2.2px);width:var(--tw);height:calc(var(--tw)*1.5);border-radius:calc(var(--tw)*.14);
-  background:linear-gradient(168deg,#f8f1de,#dccdaa);box-shadow:inset 0 1px 0 #fff,0 1.5px 0 #b29a66,0 3px 6px rgba(0,0,0,.35)}
-.fly.stack5.v{transform-origin:center}
 .dragghost{position:fixed;left:0;top:0;z-index:45;pointer-events:none;width:var(--tw);height:calc(var(--tw)*1.5);filter:drop-shadow(0 10px 12px rgba(0,0,0,.45))}
 
 /* ---------- waiting ---------- */
@@ -316,14 +311,6 @@ input.bad,.field input.bad{border-color:#ff8a8a!important;animation:wob .3s}
 .delta.pos{color:#062a1b;background:#7fe0a8}
 @keyframes dfloat{0%{opacity:0;transform:translate(-50%,8px) scale(.7)}15%{opacity:1;transform:translate(-50%,0) scale(1.1)}70%{opacity:1}100%{opacity:0;transform:translate(-50%,-26px)}}
 /* mini racks: the backs of their tiles */
-.mrack{display:flex;padding:2px 3px 4px;border-radius:4px;background:linear-gradient(#7a4a22,#4a2a10);box-shadow:inset 0 1px 0 rgba(255,220,170,.35),0 2px 5px rgba(0,0,0,.45);min-height:6px}
-.mrack:empty{opacity:.4}
-.mrack i{flex:none;width:var(--bw);height:calc(var(--bw)*1.45);border-radius:2px;background:linear-gradient(168deg,#fbf5e4,#ddcfab);box-shadow:inset 0 1px 0 #fff,0 1px 0 #a88f5c}
-.mrack i+i{margin-left:-.5px}
-.seat.p1 .mrack,.seat.p3 .mrack{flex-direction:column;padding:3px 4px 3px 2px}
-.seat.p3 .mrack{padding:3px 2px 3px 4px}
-.seat.p1 .mrack i,.seat.p3 .mrack i{width:calc(var(--bw)*1.45);height:var(--bw)}
-.seat.p1 .mrack i+i,.seat.p3 .mrack i+i{margin-left:0;margin-top:-.5px}
 /* emote bubbles */
 .bub{position:absolute;left:50%;top:-10px;transform:translate(-50%,-80%) scale(.4);opacity:0;pointer-events:none;z-index:8;transition:transform .25s cubic-bezier(.2,1.4,.4,1),opacity .2s}
 .bub.on{opacity:1;transform:translate(-50%,-100%) scale(1)}
@@ -411,10 +398,7 @@ input.bad,.field input.bad{border-color:#ff8a8a!important;animation:wob .3s}
 .rack-tiers{position:absolute;inset:0;pointer-events:none}
 .ledge{position:absolute;left:4px;right:4px;height:calc(var(--tw)*.34);border-radius:3px;
   background:linear-gradient(180deg,#c48a50 0%,#8d5729 30%,#5e3413 100%);box-shadow:0 2px 3px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,225,180,.55)}
-.ledge.l0{top:calc(var(--tw)*.24 + var(--th) - var(--tw)*.1)}
-.ledge.l1{top:calc(var(--tw)*.24 + var(--th) * 2 + var(--tg) - var(--tw)*.1)}
-.rack-tiers::before{content:"";position:absolute;left:var(--px);right:var(--px);top:calc(var(--tw)*.24);height:var(--th);border-radius:4px;background:rgba(0,0,0,.16);box-shadow:inset 0 2px 6px rgba(0,0,0,.35)}
-.rack-tiers::after{content:"";position:absolute;left:var(--px);right:var(--px);top:calc(var(--tw)*.24 + var(--th) + var(--tg));height:var(--th);border-radius:4px;background:rgba(0,0,0,.16);box-shadow:inset 0 2px 6px rgba(0,0,0,.35)}
+.rack-tiers .tbg{position:absolute;left:var(--px);right:var(--px);height:var(--th);border-radius:4px;background:rgba(0,0,0,.16);box-shadow:inset 0 2px 6px rgba(0,0,0,.35)}
 .rack-tiles{position:relative;width:var(--rw);height:var(--rh);z-index:1}
 .rack .rt{position:absolute;left:0;top:0;transition:transform .2s cubic-bezier(.3,.75,.3,1),opacity .15s;cursor:grab;touch-action:none;will-change:transform}
 .rack .rt.sel{box-shadow:0 0 0 2px #ffe39a,0 calc(var(--tw)*.3) calc(var(--tw)*.3) rgba(0,0,0,.45)}
@@ -489,9 +473,6 @@ input.bad,.field input.bad{border-color:#ff8a8a!important;animation:wob .3s}
 .felt.land .ds.d0{justify-self:start;align-self:end}
 .felt.land .seat.p1{justify-self:end;margin-right:2%}
 .felt.land .seat.p3{justify-self:start;margin-left:2%}
-.felt.land .seat.p1 .mrack,.felt.land .seat.p3 .mrack{flex-direction:row;padding:2px 3px 4px}
-.felt.land .seat.p1 .mrack i,.felt.land .seat.p3 .mrack i{width:var(--bw);height:calc(var(--bw)*1.45)}
-.felt.land .seat.p1 .mrack i+i,.felt.land .seat.p3 .mrack i+i{margin-top:0;margin-left:-.5px}
 .felt.land .seat.p1,.felt.land .seat.p3{flex-direction:column}
 .felt.land .seat.p1 .plate,.felt.land .seat.p3 .plate{flex-direction:row;width:auto;text-align:left}
 .felt.land .seat.p2{flex-direction:row;gap:8px}
@@ -747,7 +728,6 @@ html.noanim *,html.noanim *::before,html.noanim *::after{animation:none!importan
 .felt.land .seat.opp.p2 .plate{border-radius:12px 4px 4px 12px;margin:0 -2px 0 0}
 .felt.land .seat.opp:is(.p1,.p3){flex-direction:column;align-items:center}
 .felt.land .seat.opp:is(.p1,.p3) .plate{margin-bottom:-2px;border-radius:12px 12px 4px 4px}
-.mrack{display:none}
 
 /* discard stacks: a few tiles of depth, the top one face up with its own slight angle; empty = a spot printed on the felt */
 .dstack{border:0!important;border-radius:calc(var(--dw) * .14)}
@@ -794,3 +774,46 @@ html.noanim *,html.noanim *::before,html.noanim *::after{animation:none!importan
 .felt.finishing .fz{border:0!important;box-shadow:inset 0 0 0 2px rgba(241,212,138,.55),0 0 26px rgba(241,212,138,.2)}
 .seat.opp{pointer-events:none}
 .melds{width:0;min-width:100%}   /* the board fills the middle but never widens it (side racks keep their room) */
+
+/* ===== 101 on a portrait phone: three tiers of big tiles; the opening strip sits between the bottom discards,
+   the pile, indicator and okey stand in a column beside the melds ===== */
+.felt.tall101{grid-template-rows:auto minmax(0,1fr) auto auto auto;grid-template-areas:"tl top tr" "left center right" "bl status br" "rack rack rack" "mine bar bar"}
+.felt.tall101 .mine{grid-row:5}
+.felt.tall101 .bar{grid-row:5}
+.felt.tall101 .o101{grid-area:status;align-self:center;max-width:100%;gap:4px}
+.felt.tall101:has(.o101:not([hidden])) .status{display:none}
+.felt.tall101 .o101 .cnt{padding:6px 8px;font-size:11.5px}
+.felt.tall101 .o101 .chip{height:28px;padding:0 9px;font-size:11.5px}
+.felt.tall101 .center{grid-template-columns:auto minmax(0,1fr);grid-template-rows:auto auto auto;grid-template-areas:"pile melds" "ind melds" "ok melds";column-gap:6px;row-gap:4px;align-content:center}
+.felt.tall101 .center .okeyis{justify-self:center}
+.felt.tall101 .okeyis .arrow{display:none}
+.felt.tall101 .melds{height:100%}
+.felt.tall101 .o101,.felt.tall101 .status{grid-column:1 / -1;justify-self:center;max-width:calc(100% - 2 * (var(--dw) + 18px))}
+.felt.v101 .pile{--maxT:7px}
+.felt.tall101 .center{row-gap:6px}
+.felt.tall101 .pplate{bottom:-6px;font-size:9.5px;padding:2px 5px 1px}
+
+/* a smaller flourish (someone else's okey / pairs / elden finish) */
+.banner.small b{font-size:30px}
+.banner.small span{font-size:10.5px;padding:3px 11px}
+
+/* first-time guide: a gold-rimmed note pointing at the real thing */
+.guide{position:fixed;z-index:65;width:min(280px,calc(100vw - 16px));padding:10px 12px 9px;border-radius:14px;background:linear-gradient(#1d3a2c,#0e2219);
+  border:1.5px solid var(--gold);box-shadow:0 10px 26px rgba(0,0,0,.55),0 0 0 4px rgba(241,212,138,.12);animation:gin .28s cubic-bezier(.2,.9,.3,1.2)}
+.guide::after{content:"";position:absolute;left:var(--ax,50%);bottom:-8px;width:14px;height:14px;margin-left:-7px;rotate:45deg;background:#0e2219;border-right:1.5px solid var(--gold);border-bottom:1.5px solid var(--gold)}
+.guide.below::after{bottom:auto;top:-8px;background:#1d3a2c;border:0;border-left:1.5px solid var(--gold);border-top:1.5px solid var(--gold)}
+.guide .gstep{font:800 10px/1 var(--sans);letter-spacing:1px;color:var(--gold2);opacity:.8}
+.guide p{margin:4px 0 8px;font-size:13.5px;line-height:1.4;color:#eef5f0}
+.guide p b{color:var(--gold2)}
+.guide .gact{display:flex;justify-content:space-between;align-items:center}
+.guide .gskip{font-size:12px;color:var(--muted);text-decoration:underline;padding:6px 2px}
+.guide .gnext{height:30px;padding:0 14px;border-radius:999px;font-size:12.5px;font-weight:800;color:#2a1d00;background:linear-gradient(#f6dc96,#c79b3c)}
+@keyframes gin{from{opacity:0;transform:translateY(8px) scale(.96)}}
+.guided{animation:guided 1.5s ease-out}
+@keyframes guided{0%,100%{box-shadow:none}30%{box-shadow:0 0 0 3px rgba(241,212,138,.8),0 0 22px rgba(241,212,138,.5)}}
+@media (prefers-reduced-motion:reduce){
+  .felt.can-draw .ptop,.rack .rt.taken::before,.guided,.guide,.pile.shuffling .pblock,.ind.glow .tile,.rack.myturn,.felt.can-discard .ds.d0 .dstack,.felt.can-draw .ds.d3 .dstack{animation:none!important}
+  .ptop,.pside,.seat.opp .plate{transition:none!important}
+}
+.guide{pointer-events:none}
+.guide button{pointer-events:auto}

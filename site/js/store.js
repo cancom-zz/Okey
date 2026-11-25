@@ -1,6 +1,7 @@
 // Local, per-device state: identity, profile, settings, tip-ask bookkeeping and a stats cache.
 // Saved data is untrusted: every field is type-checked on load and falls back to its default.
 import { STORE_KEY, AVATARS, FELTS, SPEEDS, LEVELS, RACK_KEY, RACK_KEEP } from './config.js';
+import { emptyStats, sanitizeStats, ACHIEVEMENT_IDS } from '../shared/achievements.js';
 
 const uuid = () => (crypto.randomUUID ? crypto.randomUUID()
   : ([1e7] + -1e3 + -4e3 + -8e3 + -1e11).replace(/[018]/g, c => (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16)));
@@ -12,13 +13,11 @@ function defaults() {
     secret: uuid(),
     name: '',
     avatar: AVATARS[Math.floor(Math.random() * 8)],
-    settings: { lang: '', sound: true, speed: 'normal', felt: 'green', soloLevel: 'kalfa', soloVariant: 'classic', hints: true },
+    settings: { lang: '', sound: true, speed: 'normal', felt: 'green', soloLevel: 'kalfa', soloVariant: 'classic', hints: true, volume: 0.8, haptics: true },
     tip: { play: 0, at: 0, next: 0, went: 0, done: false },
-    stats: {
-      practice: { rounds: 0, won: 0, matches: 0, matchesWon: 0, finishes: { sets: 0, pairs: 0, okey: 0, pairsOkey: 0 }, shown: 0, streak: 0, bestStreak: 0 },
-      server: null,        // filled from the server later (phase 2)
-      ach: {},             // id -> epoch ms unlocked (cache)
-    },
+    // Stats (owned by stats.js; rules in shared/achievements.js). practice: solo results on this device, per
+    // variant; practiceAch: id -> ms first unlocked in practice; online: the last copy fetched from the server.
+    stats: { practice: emptyStats(), practiceAch: {}, online: null },
     firstPlay: 0,
   };
 }
@@ -42,18 +41,26 @@ function sanitize(raw) {
   if (FELTS.includes(st.felt)) s.settings.felt = st.felt;
   if (LEVELS.includes(st.soloLevel)) s.settings.soloLevel = st.soloLevel;
   if (st.soloVariant === 'classic' || st.soloVariant === '101') s.settings.soloVariant = st.soloVariant;
+  if (typeof st.volume === 'number' && st.volume >= 0 && st.volume <= 1) s.settings.volume = st.volume;
+  if (typeof st.haptics === 'boolean') s.settings.haptics = st.haptics;
   if (typeof st.hints === 'boolean') s.settings.hints = st.hints;
   const tp = raw.tip || {};
   for (const k of ['play', 'at', 'next', 'went']) s.tip[k] = n0(tp[k]);
   s.tip.done = tp.done === true;
-  const ps = raw.stats && raw.stats.practice || {};
-  for (const k of ['rounds', 'won', 'matches', 'matchesWon', 'shown', 'streak', 'bestStreak']) s.stats.practice[k] = n0(ps[k]);
-  for (const k of Object.keys(s.stats.practice.finishes)) s.stats.practice.finishes[k] = n0(ps.finishes && ps.finishes[k]);
-  if (raw.stats && raw.stats.server && typeof raw.stats.server === 'object') s.stats.server = raw.stats.server;
-  const ach = raw.stats && raw.stats.ach;
-  if (ach && typeof ach === 'object') for (const [k, v] of Object.entries(ach)) if (isStr(k, 40) && isNum(v)) s.stats.ach[k] = v;
+  const rs = raw.stats && typeof raw.stats === 'object' ? raw.stats : {};
+  s.stats.practice = sanitizeStats(rs.practice);
+  s.stats.practiceAch = cleanAch(rs.practiceAch);
+  const on = rs.online;
+  if (on && typeof on === 'object') s.stats.online = { stats: sanitizeStats(on.stats), achievements: cleanAch(on.achievements), at: n0(on.at) };
   s.firstPlay = n0(raw.firstPlay);
   return s;
+}
+
+/** Achievement unlock times: known ids only. */
+export function cleanAch(raw) {
+  const out = {};
+  if (raw && typeof raw === 'object') for (const id of ACHIEVEMENT_IDS) if (isNum(raw[id]) && raw[id] > 0) out[id] = Math.floor(raw[id]);
+  return out;
 }
 
 // Names: 1–20 visible characters, no control or invisible characters, collapsed spaces.

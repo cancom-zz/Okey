@@ -9,7 +9,7 @@ function ac() {
     const C = window.AudioContext || window.webkitAudioContext;
     if (!C) return null;
     ctx = new C();
-    master = ctx.createGain(); master.gain.value = 0.9;
+    master = ctx.createGain(); master.gain.value = 0.9 * (S.settings.volume ?? 0.8);
     const comp = ctx.createDynamicsCompressor(); comp.threshold.value = -14; comp.ratio.value = 4;
     master.connect(comp); comp.connect(ctx.destination);
     noiseBuf = ctx.createBuffer(1, Math.floor(ctx.sampleRate * 1.5), ctx.sampleRate);
@@ -62,11 +62,15 @@ export function sfx(kind, opt = {}) {
       case 'clack': clack(t, opt.level || 1, opt.pitch || 1); break;
       case 'settle': clack(t, 0.9); clack(t + rnd(0.055, 0.075), 0.28, 1.08); break;   // lands, then a tiny rattle
       case 'tick': clack(t, 0.35, 1.25); break;                                      // sliding along the rack
+      case 'rack': clack(t, 0.6 * (opt.level || 1), 0.92); tone(t, rnd(210, 240), 0.09, { gain: 0.05 * (opt.level || 1), type: 'triangle', fEnd: 160 }); break;   // into a wooden slot
+      case 'felt': noise(t, 0.07, { f: 700, q: 0.7, gain: 0.16, type: 'lowpass' }); clack(t + 0.004, 0.42, 0.82); break;   // on the cloth, muffled
+      case 'stack': clack(t, 0.85, 1.22); clack(t + rnd(0.03, 0.045), 0.3, 1.35); break;   // tile on tile, bright
+      case 'chime': [1318, 1976, 2637].forEach((f, i) => tone(t + i * 0.012, f, 1.4 - i * 0.3, { gain: 0.035 / (i + 1), attack: 0.003 })); break;   // the okey is revealed
       case 'pick': noise(t, 0.09, { f: 1800, q: 1.4, gain: 0.06, fEnd: 3400 }); clack(t + 0.06, 0.4, 1.15); break;
       case 'draw': noise(t, 0.14, { f: 900, q: 0.8, gain: 0.08, fEnd: 2600 }); clack(t + 0.12, 0.55, 1.05); break;
       case 'flip': noise(t, 0.08, { f: 4200, q: 1, gain: 0.05, fEnd: 1800 }); clack(t + 0.07, 0.45, 1.2); break;
       case 'deal': for (let k = 0; k < 5; k++) clack(t + k * rnd(0.018, 0.03), 0.35 + Math.random() * 0.2, 1.05); break;
-      case 'shuffle': {
+      case 'shuffle': {   // tiles rattling as the pile is mixed
         noise(t, 1.1, { f: 1500, q: 0.6, gain: 0.05, decay: 2 });
         for (let k = 0; k < 36; k++) clack(t + rnd(0, 1.05), rnd(0.12, 0.42), rnd(0.85, 1.3));
         break;
@@ -82,6 +86,15 @@ export function sfx(kind, opt = {}) {
       default: break;
     }
   } catch { /* audio is a nicety */ }
+}
+
+export function setVolume(v) {
+  S.settings.volume = Math.max(0, Math.min(1, v)); save();
+  if (master) master.gain.value = 0.9 * S.settings.volume;
+}
+// A tiny tap on drops (phones that support it), only with sound on and the setting on.
+export function buzz(ms = 8) {
+  try { if (S.settings.haptics && S.settings.sound && navigator.vibrate) navigator.vibrate(ms); } catch { /* not supported */ }
 }
 
 export function setSound(on) {

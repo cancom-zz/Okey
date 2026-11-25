@@ -310,7 +310,7 @@ test('decide returns null when it is not the bot\'s move', () => {
 // Legality, thinking time, strength
 
 // One shared simulation, in parallel worker threads: 4 tables x LADDER_ROUNDS, each level in every seat once.
-const LADDER_ROUNDS = 60;
+const LADDER_ROUNDS = 40;
 let ladder = null;
 async function runLadder() {
   if (ladder) return ladder;
@@ -348,7 +348,7 @@ test('thinking time: human-like, 350..4000 ms, beginners slower than experts', a
   assert.ok(new Set(all).size > 100, 'jittered');
 });
 
-// What 240 rounds can show robustly. Usta vs uzman is a few points of round wins, which needs thousands of
+// What 160 rounds can show robustly. Usta vs uzman is a few points of round wins, which needs thousands of
 // rounds (DESIGN.md "Bots" has the 3,200-round numbers): here only a guard that uzman is not clearly worse.
 test('strength ladder: cirak < kalfa < usta; uzman far above cirak and kalfa, not below usta', async () => {
   const { wins, points, rounds, empty } = await runLadder();

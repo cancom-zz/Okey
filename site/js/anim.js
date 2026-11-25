@@ -50,45 +50,37 @@ export function flyTile({ id = null, okey = null, from, to, start, ms = 420, arc
     { transform: 'translate(0,0) scale(1) rotate(0deg)', offset: 1 },
   ];
   const anim = el.animate(frames, { duration: d, delay: dur(delay), easing: easing || 'cubic-bezier(.3,.7,.35,1)', fill: 'both' });
-  const flipper = el.firstElementChild;
   const endBack = !faceUp;
-  if (startBack !== endBack) {
-    flipper.animate([{ transform: `rotateY(${startBack ? 180 : 0}deg)` }, { transform: `rotateY(${endBack ? 180 : 0}deg)` }],
-      { duration: d * 0.7, delay: dur(delay) + d * 0.15, easing: 'ease-in-out', fill: 'both' });
-  } else flipper.style.transform = `rotateY(${endBack ? 180 : 0}deg)`;
+  turnOver(el.firstElementChild, !startBack, !endBack, d, [0.15, 0.85], dur(delay));
   return anim.finished.then(() => { if (!keep) el.remove(); return el; }, () => { el.remove(); return null; });
 }
 
-// A block of tile backs (a stack of 5 while dealing) flying from the centre to a seat.
-export function flyStack({ from, to, n = 5, ms = 360, delay = 0, vertical = false }) {
-  if (!from || !to) return Promise.resolve();
-  const d = dur(ms); if (!d) return Promise.resolve();
-  const el = document.createElement('div');
-  el.className = 'fly stack5' + (vertical ? ' v' : '');
-  const tw = Math.max(10, Math.min(from.width, 26));
-  el.style.cssText = `--tw:${tw}px;left:${center(to).x}px;top:${center(to).y}px`;
-  el.innerHTML = Array.from({ length: n }, (_, i) => `<i style="--i:${i}"></i>`).join('');
-  layer().appendChild(el);
-  const a = center(from), b = center(to);
-  const anim = el.animate([
-    { transform: `translate(-50%,-50%) translate(${a.x - b.x}px,${a.y - b.y}px) scale(1.1)`, opacity: 0.4 },
-    { transform: `translate(-50%,-50%) translate(${(a.x - b.x) * 0.4}px,${(a.y - b.y) * 0.4 - 18}px) scale(1.12)`, opacity: 1, offset: 0.45 },
-    { transform: 'translate(-50%,-50%) scale(.9)', opacity: 1 },
-  ], { duration: d, delay: dur(delay), easing: 'cubic-bezier(.3,.7,.35,1)', fill: 'both' });
-  return anim.finished.then(() => el.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 120, fill: 'both' }).finished).then(() => el.remove(), () => el.remove());
-}
 
 // Turn an element over in 3D: first half shows what it is, then apply() swaps the face, second half lands.
 export async function flipOver(el, apply, ms = 560) {
   const d = dur(ms);
   if (!d || !el) { apply && apply(); return; }
-  el.style.transformStyle = 'preserve-3d';
-  await el.animate([{ transform: 'perspective(500px) rotateY(0deg) translateZ(0)' }, { transform: 'perspective(500px) rotateY(90deg) translateZ(10px) scale(1.15)' }],
-    { duration: d / 2, easing: 'ease-in', fill: 'forwards' }).finished.catch(() => {});
+  // lift and squash to a third of its width (never edge-on), swap the face, widen and settle
+  await el.animate([{ transform: 'translateY(0) scale(1,1)' }, { transform: 'translateY(-7px) scale(.3,1.08)' }],
+    { duration: d * 0.45, easing: 'cubic-bezier(.5,0,.75,.4)', fill: 'forwards' }).finished.catch(() => {});
   apply && apply();
-  await el.animate([{ transform: 'perspective(500px) rotateY(-90deg) translateZ(10px) scale(1.15)' }, { transform: 'perspective(500px) rotateY(0deg) translateZ(0)' }],
-    { duration: d / 2, easing: 'cubic-bezier(.2,.9,.3,1.25)', fill: 'forwards' }).finished.catch(() => {});
+  await el.animate([{ transform: 'translateY(-7px) scale(.3,1.08)' }, { transform: 'translateY(0) scale(1,1)' }],
+    { duration: d * 0.55, easing: 'cubic-bezier(.2,.9,.3,1.25)', fill: 'forwards' }).finished.catch(() => {});
   el.getAnimations().forEach(a => a.cancel());
+}
+
+// Turn a flying tile over inside [f0, f1] of its flight: the pair narrows to ~30% width, the faces swap at the
+// narrowest moment, and it widens again. No 3D, so there is never an edge-on sliver.
+function turnOver(flipper, faceFrom, faceTo, d, [f0, f1], delay = 0) {
+  const front = flipper.querySelector('.front'), rear = flipper.querySelector('.rear');
+  const show = up => { front.style.opacity = up ? '1' : '0'; rear.style.opacity = up ? '0' : '1'; };
+  if (faceFrom === faceTo) { show(faceTo); return; }
+  show(faceFrom);
+  const fm = (f0 + f1) / 2, opt = { duration: d, delay, fill: 'both' };
+  flipper.animate([{ transform: 'scaleX(1)', offset: 0 }, { transform: 'scaleX(1)', offset: f0 }, { transform: 'scaleX(.3)', offset: fm, easing: 'ease-out' },
+    { transform: 'scaleX(1)', offset: f1 }, { transform: 'scaleX(1)', offset: 1 }], { ...opt, easing: 'ease-in' });
+  const sw = (el, a, b) => el.animate([{ opacity: a, offset: 0 }, { opacity: a, offset: fm }, { opacity: b, offset: Math.min(1, fm + 0.001) }, { opacity: b, offset: 1 }], opt);
+  sw(front, faceFrom ? 1 : 0, faceTo ? 1 : 0); sw(rear, faceFrom ? 0 : 1, faceTo ? 0 : 1);
 }
 
 // A little landing bounce for something that just arrived.
@@ -147,14 +139,10 @@ export async function fly({ id = null, okey = null, from, to, faceFrom = false, 
     { transform: `translate(${dx * 0.5}px,${dy * 0.5 - lift}px) rotate(${(r0 + r1) / 2}deg) scale(${((s0 + 1) / 2) * 1.07})`, offset: 0.5 },
     { transform: `translate(0px,0px) rotate(${r1}deg) scale(1)`, offset: 1 },
   ], { duration: d, easing: 'cubic-bezier(.33,0,.2,1)', fill: 'both' });
-  const flipper = el.firstElementChild;
-  const a = faceFrom && shows ? 0 : 180, b = faceTo && shows ? 0 : 180;
-  if (a !== b) {
-    const [f0, f1] = FLIP_AT[flipAt] || FLIP_AT.mid;
-    flipper.animate([{ transform: `rotateY(${a}deg)`, offset: 0 }, { transform: `rotateY(${a}deg)`, offset: f0 }, { transform: `rotateY(${b}deg)`, offset: f1 }, { transform: `rotateY(${b}deg)`, offset: 1 }],
-      { duration: d, easing: 'ease-in-out', fill: 'both' });
-  } else flipper.style.transform = `rotateY(${a}deg)`;
+  turnOver(el.firstElementChild, faceFrom && shows, faceTo && shows, d, FLIP_AT[flipAt] || FLIP_AT.mid);
+  const t0 = performance.now();
   try { await main.finished; } catch { /* cancelled */ }
+  if (globalThis.__okeyFlights) globalThis.__okeyFlights.push([t0, performance.now()]);   // test hook (perf.pw.mjs)
   onLand && onLand();
   el.remove();
 }

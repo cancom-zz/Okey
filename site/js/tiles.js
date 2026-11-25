@@ -1,6 +1,7 @@
 // Tiles on the client: decoding (DESIGN.md "Tiles"), markup, and a light rules fallback used only until the
 // shared engine (site/shared/okey/) is available. The engine is loaded lazily; when present it is the source of truth.
 
+import { t } from './i18n.js';
 export const isFalseJoker = id => id >= 104;
 export const color = id => (id < 104 ? Math.floor(id / 26) : -1);
 export const num = id => (id < 104 ? (id % 13) + 1 : 0);
@@ -20,6 +21,13 @@ const STAR = '<svg viewBox="0 0 40 40" aria-hidden="true"><defs><radialGradient 
   + '<path fill="url(#fjg)" d="M20 6.5l3.6 8.6 9.3.8-7.1 6.1 2.2 9.1L20 26.3l-8 4.8 2.2-9.1-7.1-6.1 9.3-.8z"/></svg>';
 
 // A tile's inner markup. The outer element carries classes: tile, c0..c3 | fj, okey (for the viewer's okeys).
+// What a screen reader says for a tile: "kırmızı 7", "okey", "sahte okey", "kapalı taş".
+export function tileLabel(id, okey) {
+  if (id == null || id < 0) return t('a11y.back');
+  if (isOkey(id, okey)) return t('a11y.okey') + ' · ' + t('a11y.c' + color(id)) + ' ' + num(id);
+  if (isFalseJoker(id)) return t('a11y.fj');
+  return t('a11y.c' + color(id)) + ' ' + num(id);
+}
 export function tileInner(id) {
   if (id == null || id < 0) return '';
   if (isFalseJoker(id)) return `<span class="emb">${STAR}</span>`;
@@ -30,7 +38,7 @@ export function tileClass(id, okey) {
   return 'tile ' + (isFalseJoker(id) ? 'fj' : 'c' + color(id)) + (isOkey(id, okey) ? ' okey' : '');
 }
 export function tileHTML(id, okey, extra = '', attrs = '') {
-  return `<div class="${tileClass(id, okey)} ${extra}" ${attrs}>${tileInner(id)}</div>`;
+  return `<div class="${tileClass(id, okey)} ${extra}" role="img" aria-label="${tileLabel(id, okey)}" ${attrs}>${tileInner(id)}</div>`;
 }
 // A tile that shows a face (not an id), e.g. "okey = blue 7"
 export function faceHTML(face, extra = '') {

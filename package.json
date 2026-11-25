@@ -6,9 +6,11 @@
   "scripts": {
     "test": "node --test test/*.test.mjs",
     "dev": "npx wrangler dev",
-    "deploy": "npx wrangler deploy"
+    "deploy": "npx wrangler deploy",
+    "e2e": "node test/layout.pw.mjs && node test/online.pw.mjs"
   },
   "devDependencies": {
+    "playwright": "1.63.0",
     "wrangler": "4.162.0"
   }
 }

@@ -2,14 +2,15 @@
 // each seat's discard stack at its right (the four corners). Renders views, plays events as animations.
 import { t } from './i18n.js';
 import { EMOTES, BOT_AVATAR } from './config.js';
-import { $, $$, esc, toast, sheet, closeSheet, celebrate, banner, clearBanners } from './ui.js';
-import { sfx } from './sound.js';
+import { $, $$, esc, toast, sheet, closeSheet, celebrate, banner, clearBanners, Sparks } from './ui.js';
+import { sfx, buzz } from './sound.js';
 import { Rack, layoutFromGroups } from './rack.js';
-import { tileHTML, tileClass, tileInner, faceHTML, okeyFace, color, num, finishCheck, arrange, loadEngine, getEngine, isOkey } from './tiles.js';
+import { tileHTML, tileClass, tileInner, tileLabel, faceHTML, okeyFace, color, num, finishCheck, arrange, loadEngine, getEngine, isOkey } from './tiles.js';
 import { load101, rules101, rackOpening, bestLayout, boardHTML, story101, rows101 } from './v101.js';
-import { flyTile, flipOver, settle, wait, dur, rectOf, reduced, shake, pulse, fly, geomOf, land } from './anim.js';
+import { flyTile, flipOver, settle, wait, dur, reduced, shake, pulse, fly, geomOf, land } from './anim.js';
 import { storyOf, deltasHTML, handGroupsHTML, podiumHTML } from './result.js';
 import { confirmSheet } from './sheets.js';
+import { maybeGuide, placeGuide, closeGuide, advanceGuide } from './guide.js';
 import { recordRound, recordMatch, tipCheck, tipNote } from './tip.js';
 
 const RING = 2 * Math.PI * 20;
@@ -23,10 +24,12 @@ export class TableScreen {
     this.mount();
     loadEngine();
     this.timer = setInterval(() => this.tick(), 250);
-    this.onResize = () => this.layout();
+    this.onResize = () => { this.layout(); placeGuide(); };
+    this.onKey = e => this.key(e);
+    addEventListener('keydown', this.onKey);
     addEventListener('resize', this.onResize);
   }
-  destroy() { clearInterval(this.timer); removeEventListener('resize', this.onResize); this.root.innerHTML = ''; clearBanners(); }
+  destroy() { clearInterval(this.timer); removeEventListener('resize', this.onResize); removeEventListener('keydown', this.onKey); closeGuide(false); this.root.innerHTML = ''; clearBanners(); }
 
   // relative position: 0 me (bottom), 1 right, 2 top, 3 left
   pos(seat) { const you = this.view && this.view.you != null ? this.view.you : 0; return (seat - you + 4) % 4; }
@@ -95,6 +98,20 @@ export class TableScreen {
     $('#fz', r).addEventListener('click', () => { const id = this.rack.selected; if (id != null && this.can('discard')) this.tryFinish(id, this.rack.tileRect(id)); });
     this.layout();
   }
+  // Keyboard play (laptops): arrows pick a rack tile, Enter/Space discards it, D draws from the pile, L takes the
+  // left discard, Esc lets go.
+  key(e) {
+    if (e.metaKey || e.ctrlKey || e.altKey || document.querySelector('#modal .sheet')) return;
+    if (e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return;
+    const k = e.key;
+    if (k === 'ArrowLeft' || k === 'ArrowRight') { this.rack.step(k === 'ArrowLeft' ? -1 : 1, 0); e.preventDefault(); }
+    else if (k === 'ArrowUp' || k === 'ArrowDown') { this.rack.step(0, k === 'ArrowUp' ? -1 : 1); e.preventDefault(); }
+    else if ((k === 'Enter' || k === ' ') && this.rack.selected != null && !(e.target && e.target.tagName === 'BUTTON')) {
+      if (this.can('discard')) { this.quickDiscard(this.rack.selected); e.preventDefault(); }
+    } else if (k === 'd' || k === 'D') { if (this.can('draw')) this.draw('pile'); }
+    else if (k === 'l' || k === 'L') { if (this.can('draw')) this.draw('discard'); }
+    else if (k === 'Escape') this.rack.clearSelection();
+  }
   hideEmotes() { const p = $('#emotes', this.root); if (p) p.hidden = true; }
 
   // ---- sizing: tiles as big as the screen allows ----
@@ -107,10 +124,14 @@ export class TableScreen {
     this.felt.classList.toggle('land', land);
     this.felt.classList.toggle('wide', wide);
     let tw;
-    const cols = this.rack.cols;
+    // the rack's shape: 101 on a portrait phone gets three tiers of 11 so its 22 tiles stay ≥ 28 px
+    const tall101 = this.is101 && !land;
+    this.felt.classList.toggle('tall101', tall101);
+    this.rack.setCols(this.is101 ? (tall101 ? 11 : 15) : 13, tall101 ? 3 : 2);
+    const cols = this.rack.cols, tiers = this.rack.tiers;
     if (!land) {
       const byW = (W - 8 - 14 - 12) / cols;
-      const byH = (H * 0.31 - 16) / 3.3;
+      const byH = tiers === 3 ? (H * 0.37) / 5.75 : (H * 0.31 - 16) / 3.3;
       tw = Math.floor(Math.min(byW, byH, 52));
     } else {
       const byW = (W * (wide ? 0.54 : 0.56)) / cols;
@@ -122,7 +143,7 @@ export class TableScreen {
     this.rack.setSize(tw, gap);
     // centre and discard tiles: as big as the felt between the opponents and the rack allows
     let dw = land ? Math.min(tw * (wide ? 1.12 : 1.0), wide ? 62 : 42, H / 9) : Math.min((H - 300) / 5.2, 54, (W - 200) / 2.6);
-    if (this.is101) dw = Math.min(dw, land ? 34 : 38);   // the middle also holds the melds
+    if (this.is101) dw = Math.min(dw, land ? 34 : 28);   // the middle also holds the melds
     dw = Math.round(Math.max(24, dw));
     this.mwMax = Math.round(Math.max(12, Math.min(wide ? 30 : 22, tw * 0.8)));
     this.felt.style.setProperty('--dw', dw + 'px');
@@ -145,7 +166,6 @@ export class TableScreen {
     if (is === this.is101) return;
     this.is101 = is;
     this.felt.classList.toggle('v101', is);
-    this.rack.setCols(is ? 15 : 13);
     this.layout();
     if (is) load101().then(() => { if (this.view) { this.renderMelds(); this.strip101(); } });
     for (let p = 1; p < 4; p++) { const b = this.oppBox(p); if (b) b.innerHTML = ''; }
@@ -177,6 +197,7 @@ export class TableScreen {
     this.busy = false;
     if (v.phase === 'playing' && r && r.turn === v.you && (!prev || !prev.round || prev.round.turn !== v.you || prev.round.number !== r.number) && v.you != null) {
       sfx('turn'); pulse($('#rack', this.root), 'myturn', 1200);
+      if (!this.dealing) setTimeout(() => maybeGuide(this.root, this.is101 ? '101' : 'classic'), dur(500) || 30);
     }
     if ((v.phase === 'roundEnd' || v.phase === 'matchEnd') && v.result && this.resultShown !== resultKey(v)) this.showResult(false);
     if (v.phase === 'playing' && !$('#result', this.root).hidden) this.hideResult();
@@ -187,7 +208,7 @@ export class TableScreen {
     this.roundKey = `${view.code}.${r.number}`;
     if (view.hand) {
       const restored = this.rack.restore(this.roundKey, view.hand);
-      if (!restored) this.rack.layout(layoutFromGroups(arrange(view.hand, r.okey, 'runs'), this.rack.cols));
+      if (!restored) this.rack.layout(layoutFromGroups(arrange(view.hand, r.okey, 'runs'), this.rack.cols, this.rack.tiers));
     }
     this.rack.setOkey(r.okey);
     this.stacks = [[], [], [], []];
@@ -246,16 +267,25 @@ export class TableScreen {
     const el = $('#melds', this.root), r = this.view.round;
     const tb = table || (this.is101 && r && Array.isArray(r.table) ? r.table : null);
     el.hidden = !this.is101 || !r;
-    if (el.hidden) { el.innerHTML = ''; return; }
+    if (el.hidden) { el.innerHTML = ''; el.dataset.k = ''; return; }
+    // rebuild only when the melds (or the hidden tiles) changed: this runs on every render
+    const key = JSON.stringify([tb ? tb.map(m => m.tiles) : 0, hide ? [...hide] : 0, this.view.you, t('t101.emptyTable')]);
+    if (el.dataset.k === key) return;
+    el.dataset.k = key;
     el.innerHTML = tb && tb.length ? boardHTML(tb, r.okey, this.view.seats, s => this.pos(s), hide) : `<div class="mempty">${t('t101.emptyTable')}</div>`;
     this.fitBoard();
   }
-  // shrink the meld tiles until every meld fits the board
+  // shrink the meld tiles until every meld fits the board: estimate from one measurement, then at most two checks
   fitBoard() {
     const el = $('#melds', this.root); if (el.hidden) return;
     let mw = this.mwMax || 20;
     el.style.setProperty('--mw', mw + 'px');
-    while (mw > 11 && el.scrollHeight > el.clientHeight + 1) { mw--; el.style.setProperty('--mw', mw + 'px'); }
+    for (let i = 0; i < 3 && mw > 11; i++) {
+      const sh = el.scrollHeight, ch = el.clientHeight;
+      if (sh <= ch + 1) break;
+      mw = Math.max(11, Math.floor(mw * Math.min(0.94, Math.sqrt(ch / sh))));
+      el.style.setProperty('--mw', mw + 'px');
+    }
   }
   meldEl(i) { return $(`#melds .mg[data-i="${i}"]`, this.root); }
   mwNow() { return parseFloat(getComputedStyle($('#melds', this.root)).getPropertyValue('--mw')) || 18; }
@@ -291,7 +321,7 @@ export class TableScreen {
     if (a === 'best') {
       const bl = bestLayout(this.rack.tiles(), r, v.settings, v.you); if (!bl) return;
       const loose = arrange(bl.rest, r.okey, 'runs');
-      this.rack.layout(layoutFromGroups([...bl.groups, ...loose], this.rack.cols)); sfx('deal');
+      this.rack.layout(layoutFromGroups([...bl.groups, ...loose], this.rack.cols, this.rack.tiers)); sfx('deal');
       if (!bl.enough) toast(bl.kind === 'pairs' ? t('o101.notYetPairs', { n: bl.count, need: bl.req.pairs }) : t('o101.notYet', { n: bl.value, need: bl.req.value }), '', 2600);
       return;
     }
@@ -379,7 +409,7 @@ export class TableScreen {
         html += id != null ? `<div class="${tileClass(id, okey)} dl face" style="--i:${i};--r:${tileRot(id)}deg">${tileInner(id)}</div>` : `<i class="dl" style="--i:${i};--r:${layerRot(p, i)}deg"></i>`;
       }
       if (n) html += top != null
-        ? `<div class="${tileClass(top, okey)} dtop" data-id="${top}" style="--i:${layers};--r:${tileRot(top)}deg">${tileInner(top)}</div>`
+        ? `<div class="${tileClass(top, okey)} dtop" data-id="${top}" role="img" aria-label="${tileLabel(top, okey)}" style="--i:${layers};--r:${tileRot(top)}deg">${tileInner(top)}</div>`
         : `<div class="tile back dtop" style="--i:${layers};--r:0deg"></div>`;
       box.innerHTML = html; box.dataset.k = key;
     }
@@ -452,7 +482,7 @@ export class TableScreen {
       secs.textContent = left < 10000 ? s : '';
       const hurry = left < 6000;
       el.classList.toggle('hurry', hurry);
-      if (hurry && seat === v.you && s !== this.lastTock && s > 0) { this.lastTock = s; sfx('tock'); }
+      if (seat === v.you && left <= 5000 && s !== this.lastTock && s > 0) { this.lastTock = s; sfx('tock'); }
     });
   }
 
@@ -464,6 +494,7 @@ export class TableScreen {
   }
   act(action) {
     this.busy = true;
+    advanceGuide();
     this.ctx.send({ t: 'act', action, v: this.view.v });
   }
   error(code) {
@@ -574,7 +605,7 @@ export class TableScreen {
     const top = this.discTop(0), to = this.discGeom(0);
     this.act({ type: 'discard', tile: id });
     fly({ id, okey, from: rectGeo(fromRect), to, faceFrom: true, faceTo: true, ms: 300, arc: 0.14,
-      onLand: () => { if (this.pendingDiscard === id || this.discTop(0) === top) { top.style.visibility = ''; land(top); sfx('settle'); } } });
+      onLand: () => { if (this.pendingDiscard === id || this.discTop(0) === top) { top.style.visibility = ''; land(top); sfx(this.disp.disc[me].count > 1 ? 'stack' : 'felt'); buzz(); } } });
     return true;
   }
   tryFinish(id, fromRect) {
@@ -665,13 +696,13 @@ export class TableScreen {
           this.rack.sync([...this.rack.tiles(), tile], new Map([[tile, slot]]));
           sfx('draw');
           await flyTile({ id: tile, okey, from: (pd && pd.rect) || fromRect, to: this.rack.tileRect(tile), start: ev.from === 'pile' && !(pd && pd.rect) ? 'back' : 'face', ms: pd && pd.rect ? 160 : 420, arc: 0.18 });
-          this.rack.hide(tile, false); sfx('tick'); settle(this.rack.els.get(tile), 0.6);
+          this.rack.hide(tile, false); sfx('rack'); buzz(); settle(this.rack.els.get(tile), 0.6);
           d.count[me]++;
         } else {
           // a tile back slides from the pile to their rack; a discard they take slides face up and turns in
           const slot = this.oppAdd(p), to = this.oppGeom(p, slot), face = ev.from === 'discard';
           sfx('draw');
-          await fly({ id: face ? ev.tile : null, okey, from: fromGeo, to, faceFrom: face, faceTo: false, flipAt: 'late', ms: 360, arc: 0.14, onLand: () => { this.oppReveal(p, slot); sfx('tick'); } });
+          await fly({ id: face ? ev.tile : null, okey, from: fromGeo, to, faceFrom: face, faceTo: false, flipAt: 'late', ms: 360, arc: 0.14, onLand: () => { this.oppReveal(p, slot); sfx('rack', { level: 0.45 }); } });
           d.count[ev.seat]++;
         }
         return;
@@ -694,7 +725,7 @@ export class TableScreen {
         this.setDiscard(p, st, true);
         const top = this.discTop(p), to = this.discGeom(p);
         await fly({ id: ev.tile, okey, from, to, faceFrom: ev.seat === me, faceTo: true, flipAt: 'early', ms: 400, arc: 0.26,
-          onLand: () => { top.style.visibility = ''; land(top); sfx('settle'); } });
+          onLand: () => { top.style.visibility = ''; land(top); sfx(st.count > 1 ? 'stack' : 'felt'); } });
         return;
       }
       case 'showIndicator': return this.showIndicatorFx(ev, true);
@@ -772,7 +803,7 @@ export class TableScreen {
       if (ev.seat === me) this.rack.hide(ev.tile, true);
       st.count++; st.top = ev.tile; this.stackPush(prevSeat, ev.tile); this.setDiscard(pp, st, true);
       const top = this.discTop(pp);
-      await fly({ id: ev.tile, okey, from, to: this.discGeom(pp), faceFrom: ev.seat === me, faceTo: true, flipAt: 'early', ms: 360, arc: 0.2, onLaunch: null, onLand: () => { top.style.visibility = ''; land(top); sfx('settle'); } });
+      await fly({ id: ev.tile, okey, from, to: this.discGeom(pp), faceFrom: ev.seat === me, faceTo: true, flipAt: 'early', ms: 360, arc: 0.2, onLaunch: null, onLand: () => { top.style.visibility = ''; land(top); sfx(st.count > 1 ? 'stack' : 'felt'); } });
       d.count[ev.seat] = Math.max(0, d.count[ev.seat] - 1);
     }
   }
@@ -842,7 +873,7 @@ export class TableScreen {
     if (ok && !reduced()) {
       ok.animate([{ opacity: 0, transform: 'translateX(-8px) scale(.85)' }, { opacity: 1, transform: 'none' }], { duration: dur(320), easing: 'cubic-bezier(.2,.9,.3,1.2)' });
       const rb = $('.ribbon', ok); if (rb) rb.animate([{ clipPath: 'inset(0 100% 0 0)' }, { clipPath: 'inset(0 0 0 0)' }], { duration: dur(360), delay: dur(160), fill: 'backwards', easing: 'ease-out' });
-      sfx('pop');
+      sfx('chime');
     }
     pulse($('.ind', this.root), 'glow', 1400);
     this.dealing = false;
@@ -946,10 +977,14 @@ export class TableScreen {
     }
     void card;
     if (r.winner != null) {
+      const big = r.okeyFinish || r.kind === 'pairs' || r.elden || (r.multiplier || 1) > 1;
       if (won) {
         tipNote(true);
-        const big = r.okeyFinish || r.kind === 'pairs' || r.elden || (r.multiplier || 1) > 1;
         if (!isMatch) celebrate(big ? story.v : t('cele.win'), big ? t('cele.bigSub') : t('cele.winSub'), { sound: r.okeyFinish ? 'okey' : 'win', sparks: big ? 60 : 30 });
+      } else if (big && !isMatch) {
+        // someone else's okey / pairs / elden finish still deserves a small flourish
+        banner(story.v, t(r.elden ? 'cele.elden' : r.okeyFinish ? 'cele.okeyFinish' : 'cele.pairsFinish'), 'gold small', 1900);
+        Sparks.burst(16); sfx('chime');
       } else sfx('lose');
     }
     if (isMatch) {
@@ -959,7 +994,7 @@ export class TableScreen {
       const iWon = winners.includes(v.you);
       recordMatch(v, iWon, this.ctx.solo);
       if (iWon) { celebrate(t('cele.champion'), t('cele.championSub'), { sound: 'fanfare', sparks: 90 }); tipNote(true); }
-      else banner(t('cele.matchOver'), t('cele.matchWinner', { name: winners.map(i => v.seats[i].name).join(' & ') }), 'gold');
+      else celebrate(t('cele.theyChampion', { name: winners.map(i => v.seats[i].name).join(' & ') }), t('cele.matchOver'), { sound: 'win', sparks: 40 });
       await wait(2300);   // the banner first, then the standings (never one over the other)
       clearBanners();
       this.showPodium();
@@ -980,6 +1015,13 @@ export class TableScreen {
     const v = this.view;
     sheet(`<h2>${t('podium.title')}</h2>${podiumHTML(v, this.is101)}${this.is101 ? `<p class="muted small center">${t('podium.lowWins')}</p>` : ''}
       <div class="row"><button class="btn" id="pdHome">${t('result.leave')}</button><button class="btn gold" id="pdAgain">${t('result.rematch')}</button></div>`, { cls: 'podsheet' });
+    // confetti over the podium, the winner's step shines
+    const st = $('.podium .pd.p0 .step');
+    if (st && !reduced()) {
+      const b = st.getBoundingClientRect(); Sparks.burst(48, b.left + b.width / 2, b.top);
+      st.animate([{ filter: 'brightness(1)' }, { filter: 'brightness(1.35)' }, { filter: 'brightness(1)' }], { duration: dur(1400), iterations: 2 });
+      $$('.podium .pd').forEach((pd, i) => pd.animate([{ transform: 'translateY(24px)', opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: dur(420), delay: dur([200, 0, 380][i] || 0), fill: 'backwards', easing: 'cubic-bezier(.2,.9,.3,1.2)' }));
+    }
     $('#pdHome').onclick = () => { closeSheet(); this.ctx.leave(); };
     $('#pdAgain').onclick = () => { closeSheet(); const b = $('#rvNext', this.root); if (b && !b.disabled) b.click(); };
   }
@@ -1022,11 +1064,6 @@ function dedupe(events, you) {
   return out;
 }
 const resultKey = v => `${v.code}.${v.round ? v.round.number : 0}.${v.phase}`;
-function shrink(r, like) {
-  if (!r) return like;
-  const w = like ? like.width * 0.7 : 16, h = like ? like.height * 0.7 : 24;
-  return { left: r.left + r.width / 2 - w / 2, top: r.top + r.height / 2 - h / 2, width: w, height: h };
-}
 function shiftPreview(slots, at, cols) {
   const s = slots.slice(), base = Math.floor(at / cols) * cols;
   for (let j = at + 1; j < base + cols; j++) if (s[j] == null) { for (let k = j; k > at; k--) s[k] = s[k - 1]; s[at] = null; return s; }

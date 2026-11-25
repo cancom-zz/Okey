@@ -59,26 +59,12 @@ function openTipThanks() {
 export const kofiLinkHTML = (label) => `<a class="kofi tiplink2" href="${KOFI_URL}" target="_blank" rel="noopener">${label}</a>`;
 document.addEventListener('click', e => { if (e.target.closest('.tiplink2')) { S.tip.went = Date.now(); save(); } });
 
-// ---- local stats cache ----
-const seenRounds = new Set();
+// ---- practice bookkeeping ----
+// Practice stats and achievements are recorded by stats.js from the solo table's own round/match summaries
+// (LocalTable onResult), with the same rules as the server (shared/achievements.js). Here only the first-play
+// time for the tip rules.
 export function recordRound(view, solo) {
   if (!solo || view.you == null || !view.result) return;
-  const k = `${view.round && view.round.number}.${view.result.tile}.${view.result.winner}`;
-  if (seenRounds.has(k)) return; seenRounds.add(k);
-  if (!S.firstPlay) S.firstPlay = Date.now();
-  const p = S.stats.practice, r = view.result;
-  p.rounds++;
-  if (r.winner === view.you) {
-    p.won++; p.streak++; p.bestStreak = Math.max(p.bestStreak, p.streak);
-    const kind = r.kind === 'pairs' ? (r.okeyFinish ? 'pairsOkey' : 'pairs') : (r.okeyFinish ? 'okey' : 'sets');
-    p.finishes[kind]++;
-  } else if (r.winner != null) p.streak = 0;
-  save();
+  if (!S.firstPlay) { S.firstPlay = Date.now(); save(); }
 }
-export function recordMatch(view, won, solo) {
-  if (!solo || view.you == null) return;
-  const p = S.stats.practice; p.matches++; if (won) p.matchesWon++;
-  save();
-}
-// Achievements are recorded by the server (phase 2) so they can't be faked; practice never unlocks them.
-// The server's list is cached in S.stats.ach when it arrives.
+export function recordMatch() { /* see stats.js */ }

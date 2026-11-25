@@ -9,7 +9,7 @@ const out = process.argv[2];
 if (!out) { console.error('usage: node tools/artifact.mjs OUT_DIR'); process.exit(1); }
 rmSync(out, { recursive: true, force: true });
 cpSync(new URL('../site', import.meta.url).pathname, out, { recursive: true });
-for (const f of ['404.html', 'manifest.webmanifest', 'js/mock.js']) rmSync(join(out, f), { force: true });
+for (const f of ['404.html', 'manifest.webmanifest', 'js/mock.js', '_headers']) rmSync(join(out, f), { force: true });
 
 let html = readFileSync(join(out, 'index.html'), 'utf8');
 const head = html.match(/<head>([\s\S]*)<\/head>/)[1];

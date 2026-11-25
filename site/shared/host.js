@@ -46,6 +46,8 @@ export const AUTOPLAY_MS = 1_000;         // a seat away for 2+ timeouts is auto
 export const AWAY_AUTOPLAY_AFTER = 2;     // consecutive timeouts
 export const OFFLINE_TURN_SECONDS = 30;   // turn limit for a disconnected human when turnSeconds is 0 (off)
 export const EMOTE_GAP_MS = 1_500;
+export const BOT_HURRY_MS = 15_000;      // online: a bot may say "Hadi!" when a human has thought this long
+const ROOM_CODE = /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$/; // online rooms; solo practice is 'SOLO'
 export const RATE = { burst: 20, perSec: 5 };
 export const MAX_MESSAGE_CHARS = 2_000;
 export const DEFAULT_SETTINGS = { variant: 'classic', turnSeconds: 30, rounds: null, startPoints: 20 };
@@ -231,6 +233,14 @@ export function eventsFor(events, seat) {
 
 const emptySeat = () => ({ kind: 'empty' });
 
+/** Constant-time string compare (secrets; online they are SHA-256 hex digests, hashed by the Room). */
+export function safeEqual(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string' || a.length !== b.length) return false;
+  let d = 0;
+  for (let i = 0; i < a.length; i++) d |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return d === 0;
+}
+
 export class TableHost {
   constructor({ code, settings, now, schedule, send, close, rng, onResult, saved, engine, createBot }) {
     this._engine = engine || null; // injected (tests): used for every variant
@@ -267,8 +277,10 @@ export class TableHost {
       this.roundInfo = null; // { winner, kind, okeyFinish, showed: [bool x4] }
       this.matchNo = 0;
       this.pausedAt = null;
+      this.hurryAt = null;  // online: when a bot may hurry the human on turn (bot table talk)
       this.dirty = true;
     }
+    this.botEmoteAt = [-Infinity, -Infinity, -Infinity, -Infinity]; // bot emote rate limit (as for humans)
   }
 
   /** The rules engine of the current match (or of the settings, before a match). */
@@ -295,7 +307,7 @@ export class TableHost {
       hostSeat: this.hostSeat, players: this.players, match: this.match, phase: this.phase,
       deadline: this.deadline, turnEndsAt: this.turnEndsAt, turnKey: this.turnKey, turnNo: this.turnNo,
       turns: this.turns, botActs: this.botActs, botAction: this.botAction, ready: this.ready, roundInfo: this.roundInfo,
-      matchNo: this.matchNo, pausedAt: this.pausedAt,
+      matchNo: this.matchNo, pausedAt: this.pausedAt, hurryAt: this.hurryAt,
       bots: this.bots.map((b) => (b && typeof b.snapshot === 'function' ? b.snapshot() : null)),
     });
   }
@@ -306,6 +318,7 @@ export class TableHost {
       'deadline', 'turnEndsAt', 'turnKey', 'turnNo', 'turns', 'botActs', 'botAction', 'ready', 'roundInfo', 'matchNo', 'pausedAt']) {
       this[k] = d[k];
     }
+    this.hurryAt = d.hurryAt ?? null;
     // No socket is attached after a restore: the transport calls bind() for each live one before wake().
     this.bots = d.seats.map((seat, i) => (seat.kind === 'bot' && this.match ? this.makeBot(seat, d.bots?.[i] ?? undefined) : null));
     this.dirty = false;
@@ -383,6 +396,7 @@ export class TableHost {
     this.pausedAt = null;
     if (this.deadline !== null) this.deadline += shift;
     if (this.turnEndsAt !== null) this.turnEndsAt += shift;
+    if (this.hurryAt !== null && this.hurryAt !== undefined) this.hurryAt += shift;
     this.dirty = true;
   }
 
@@ -432,7 +446,7 @@ export class TableHost {
     const avatar = AVATARS.includes(p.avatar) ? p.avatar : AVATARS[0];
     if (c.playerId && c.playerId !== p.id) return this.error(connId, 'badIdentity');
     const known = this.players[p.id];
-    if (known !== undefined && known !== p.secret) return this.error(connId, 'badIdentity');
+    if (known !== undefined && !safeEqual(known, p.secret)) return this.error(connId, 'badIdentity');
     if (known === undefined) {
       this.prunePlayers();
       this.players[p.id] = p.secret;
@@ -672,6 +686,7 @@ export class TableHost {
           this.roundInfo = {
             round: e.round, winner: null, kind: null, okeyFinish: false,
             showed: [false, false, false, false], deltas: [0, 0, 0, 0],
+            islek: [0, 0, 0, 0], islekPoints: [0, 0, 0, 0], elden: false, multiplier: 1,
           };
           this.ready = [false, false, false, false];
           break;
@@ -679,10 +694,18 @@ export class TableHost {
         case 'finish':
           this.turnNo += 1;
           this.turns[e.seat] += 1;
-          if (e.type === 'finish') Object.assign(this.roundInfo, { winner: e.seat, kind: e.kind, okeyFinish: !!e.okeyFinish });
+          if (e.type === 'finish') {
+            Object.assign(this.roundInfo, { winner: e.seat, kind: e.kind, okeyFinish: !!e.okeyFinish, elden: !!e.elden, multiplier: e.multiplier ?? 1 });
+          }
           break;
         case 'showIndicator':
           this.roundInfo.showed[e.seat] = true;
+          break;
+        case 'penalty': // 101: an işlek tile (or an okey) discarded
+          if (e.reason === 'islek' && this.roundInfo.islek) {
+            this.roundInfo.islek[e.seat] += 1;
+            this.roundInfo.islekPoints[e.seat] += e.points || 0;
+          }
           break;
         case 'score': // a finish, or an indicator shown mid-round
           this.roundInfo.deltas = this.roundInfo.deltas.map((d, i) => d + (e.deltas?.[i] ?? 0));
@@ -697,6 +720,7 @@ export class TableHost {
       const bot = this.bots[i];
       if (bot) for (const e of eventsFor(events, i)) bot.observe(clone(e));
     }
+    this.botTalk(events);
     const prevPhase = this.phase;
     this.phase = this.publicView().phase || this.phase;
     const roundEnded = prevPhase === 'playing' && (this.phase === 'roundEnd' || this.phase === 'matchEnd');
@@ -719,16 +743,22 @@ export class TableHost {
         this.botActs = 0;
         if (s.kind === 'bot') {
           this.turnEndsAt = null;
+          this.hurryAt = null;
           this.planBot(turn);
-        } else this.setHumanDeadline(turn);
+        } else {
+          this.setHumanDeadline(turn);
+          this.hurryAt = this.isOnline() && this.bots.some(Boolean) ? now + BOT_HURRY_MS : null;
+        }
       } else if (s.kind === 'bot') {
         this.planBot(turn); // same turn, next step (drew, now discards)
       }
     } else if (this.phase === 'roundEnd') {
       this.turnEndsAt = null;
+      this.hurryAt = null;
       if (prevPhase !== 'roundEnd') this.deadline = now + NEXT_ROUND_MS;
     } else {
       this.turnEndsAt = null;
+      this.hurryAt = null;
       this.deadline = null;
     }
   }
@@ -771,6 +801,10 @@ export class TableHost {
   wake() {
     if (this.pausedAt !== null && this.pausedAt !== undefined) return this.reschedule();
     const now = this.now();
+    if (this.hurryAt !== null && this.hurryAt !== undefined && now >= this.hurryAt) {
+      this.hurryAt = null;
+      this.botHurry();
+    }
     for (let guard = 0; guard < 8 && this.deadline !== null && now >= this.deadline; guard++) {
       if (this.phase === 'playing') {
         const turn = this.currentTurn();
@@ -791,10 +825,9 @@ export class TableHost {
     this.botActs += 1;
     // A classic turn is 2 bot steps; a 101 turn can be many (draw, open, add, swap, ..., discard).
     if (action && this.botActs <= (this.is101 ? MAX_BOT_STEPS_101 : 4)) {
-      try {
-        const res = this.engine.act(this.match, seat, action);
-        return this.applyGame(res.match, res.events);
-      } catch { /* an illegal bot move falls back to auto-play */ }
+      let res = null;
+      try { res = this.engine.act(this.match, seat, action); } catch { /* an illegal bot move falls back to auto-play */ }
+      if (res) return this.applyGame(res.match, res.events);
     }
     this.autoStep(seat);
   }
@@ -855,7 +888,53 @@ export class TableHost {
       this.changed([]);
       this.reschedule();
     }
-    for (const [id, o] of this.conns) if (o.playerId) this._send(id, { t: 'emote', seat, id: msg.id });
+    this.broadcastEmote(seat, msg.id);
+  }
+
+  /** The one emote path, for humans and bots: every connected player sees { t: 'emote', seat, id }. */
+  broadcastEmote(seat, id) {
+    for (const [cid, o] of this.conns) if (o.playerId) this._send(cid, { t: 'emote', seat, id });
+  }
+
+  isOnline() {
+    return ROOM_CODE.test(String(this.code ?? ''));
+  }
+
+  /**
+   * Bot table talk (bots/chatter.js): each bot hears the round's PUBLIC events only, reduced to type, seat and
+   * round (no tiles), and may answer with a preset emote. Rate-limited like humans; the bot itself says at
+   * most one thing per round. Never about its own hand: it reacts to others finishing, match start and end.
+   */
+  botTalk(events) {
+    const now = this.now();
+    for (let i = 0; i < 4; i++) {
+      const bot = this.bots[i];
+      if (!bot || typeof bot.chat !== 'function') continue;
+      for (const e of events) {
+        if (e.to !== undefined || e.except !== undefined) continue;
+        const id = bot.chat({ type: e.type, seat: e.seat, round: e.round });
+        if (id && EMOTES.includes(id) && now - this.botEmoteAt[i] >= EMOTE_GAP_MS) {
+          this.botEmoteAt[i] = now;
+          this.broadcastEmote(i, id);
+        }
+      }
+    }
+  }
+
+  /** Online, a human on turn has been thinking for BOT_HURRY_MS: at most one bot may say "Hadi!". */
+  botHurry() {
+    if (this.phase !== 'playing' || this.seats[this.currentTurn()]?.kind !== 'human') return;
+    const now = this.now();
+    for (let i = 0; i < 4; i++) {
+      const bot = this.bots[i];
+      if (!bot || typeof bot.hurry !== 'function' || now - this.botEmoteAt[i] < EMOTE_GAP_MS) continue;
+      const id = bot.hurry();
+      if (id && EMOTES.includes(id)) {
+        this.botEmoteAt[i] = now;
+        this.broadcastEmote(i, id);
+        return;
+      }
+    }
   }
 
   // ---------------------------------------------------------------- results
@@ -868,8 +947,10 @@ export class TableHost {
    */
   report(type, e) {
     const info = this.roundInfo || {};
-    const scores = this.publicView().seats.map((s) => s.score);
+    const pv = this.publicView();
+    const scores = pv.seats.map((s) => s.score);
     const isRound = type === 'round';
+    const openings = this.is101 && isRound ? pv.round?.openings ?? [] : [];
     const winners = isRound ? (Number.isInteger(info.winner) ? [info.winner] : []) : e.winners.slice();
     const summary = {
       type, code: this.code, variant: this.is101 ? '101' : 'classic', match: this.matchNo, round: info.round ?? null, at: this.now(),
@@ -891,7 +972,13 @@ export class TableHost {
         score: scores[i],
         turns: isRound ? this.turns[i] : null,
         showedIndicator: isRound ? !!info.showed?.[i] : false,
+        // 101 only (round summaries): how the seat opened, işlek penalties paid, an elden finish
+        ...(this.is101 && isRound ? {
+          opened: openings[i]?.kind ?? null, openingValue: openings[i]?.value ?? 0, openingPairs: openings[i]?.pairs ?? 0,
+          islek: info.islek?.[i] ?? 0, islekPoints: info.islekPoints?.[i] ?? 0, elden: info.winner === i && !!info.elden,
+        } : {}),
       })),
+      ...(this.is101 && isRound ? { elden: !!info.elden, multiplier: info.multiplier ?? 1 } : {}),
     };
     try { this.onResult(summary); } catch { /* stats never break the table */ }
   }
@@ -1026,6 +1113,8 @@ export class TableHost {
 
   nextWakeAt() {
     if (this.pausedAt !== null && this.pausedAt !== undefined) return null;
+    const h = this.hurryAt ?? null;
+    if (h !== null && (this.deadline === null || h < this.deadline)) return h;
     return this.deadline ?? null;
   }
 

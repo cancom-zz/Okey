@@ -12,6 +12,7 @@ import { openSettings, openRules, openStats, openProfile, applyFelt, confirmShee
 import { openTip, setResting } from './tip.js';
 import { getLang } from './i18n.js';
 import { loadEngine } from './tiles.js';
+import { onlineResult } from './stats.js';
 
 const screen = () => $('#screen');
 // Practice has no turn clock. ?points=N&rounds=N (dev/tests) make a short practice match.
@@ -85,6 +86,7 @@ class Room {
       }
       if (this.uiKind !== 'table') this.swap('table');
       topbar();
+      if (!this.solo) onlineResult(v);   // the server recorded a round/match: refresh stats, toast unlocks
       await this.ui.update(v, m.events || []);
     } else if (m.t === 'emote') { this.ui && this.ui.emote(m.seat, m.id); }
     else if (m.t === 'error') {
@@ -189,3 +191,9 @@ function boot() {
   void save; void sfx;
 }
 boot();
+
+// Offline + install: a network-first service worker, only on a real http(s) origin (not file://, not inside the
+// claude.ai playtest artifact or any iframe).
+if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol) && !globalThis.OKEY_PLAYTEST && window.top === window) {
+  addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+}

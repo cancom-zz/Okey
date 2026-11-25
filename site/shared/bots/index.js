@@ -13,6 +13,7 @@ import { seededRng } from '../okey/rng.js';
 import { Memory } from './memory.js';
 import { plan } from './classic.js';
 import { plan101 } from './okey101.js';
+import { createChatter } from './chatter.js';
 
 export const LEVEL_IDS = ['cirak', 'kalfa', 'usta', 'uzman'];
 
@@ -24,16 +25,20 @@ export const LEVELS = freeze({
     id: 'cirak', name: 'Çırak', en: 'Apprentice',
     params: freeze({ memory: 0.25, decay: 0.12, lookahead: 1, defense: 0, pairsBias: 0.85, blunder: 0.25,
       takeDiscard: 0.7, gamble: 0, speed: 1.35 }),
+    params101: freeze({ blunder: 0.32 }),
   }),
   kalfa: freeze({
     id: 'kalfa', name: 'Kalfa', en: 'Journeyman',
     params: freeze({ memory: 0.5, decay: 0.07, lookahead: 2, defense: 0.3, pairsBias: 0.95, blunder: 0.12,
       takeDiscard: 0.6, gamble: 0, speed: 1.15 }),
+    params101: freeze({ blunder: 0.22 }),
   }),
   usta: freeze({
     id: 'usta', name: 'Usta', en: 'Master',
-    params: freeze({ memory: 0.7, decay: 0.04, lookahead: 3, defense: 0.6, pairsBias: 1, blunder: 0.06,
+    params: freeze({ memory: 0.7, decay: 0.04, lookahead: 3, defense: 0.6, pairsBias: 1, blunder: 0.09,
       takeDiscard: 0.4, gamble: 0.1, speed: 1.0 }),
+    // 101: opens as soon as it can (no waiting for sets over pairs, no holding), less patient, more slips.
+    params101: freeze({ lookahead: 2, blunder: 0.13, gamble: 0 }),
   }),
   uzman: freeze({
     id: 'uzman', name: 'Uzman', en: 'Expert',
@@ -67,13 +72,21 @@ export function resolveParams(level, overrides = {}) {
   };
 }
 
-const BASE_DELAY = { show: 1000, draw: 750, discard: 1000, finish: 1700, open: 1400, play: 800 };
+const BASE_DELAY = { show: 1000, draw: 750, take: 1300, discard: 1000, finish: 1700, open: 1500, play: 800 };
 const MIN_DELAY = 350;
 const MAX_DELAY = 4000;
 
+/** A bot's own tempo (0.85..1.15): some think a little quicker, others more deliberately. Seeded. */
+function tempoOf(seed) {
+  return 0.85 + 0.3 * seededRng(`${seed}:tempo`).random();
+}
+
 export function createBot({ level = DEFAULT_LEVEL, params, seed = 1, saved } = {}) {
   const lvl = LEVELS[saved?.level ?? level] ? (saved?.level ?? level) : DEFAULT_LEVEL;
-  const p = resolveParams(lvl, saved?.params ?? params);
+  // Custom overrides win over the level, in both variants; 101 starts from the level's 101 params.
+  const custom = (saved ? saved.custom ?? saved.params : params) ?? {};
+  const p = resolveParams(lvl, custom);
+  const p101 = resolveParams(lvl, { ...(LEVELS[lvl].params101 ?? {}), ...custom });
   const rng0 = seededRng(saved ? saved.rng : seed);
   const rng = {
     next: rng0.random,
@@ -85,13 +98,15 @@ export function createBot({ level = DEFAULT_LEVEL, params, seed = 1, saved } = {
   const mem = new Memory(p, rng, saved?.memory);
   const st = { round: null, indicator: null, gambled: false, took: null, ...(saved?.state ?? {}) };
   const st101 = { round: null, mark: null, steps: 0, lazy: false, openedAt: null, ...(saved?.state101 ?? {}) };
+  const tempo = saved?.tempo ?? tempoOf(seed);
+  const chatter = createChatter({ level: lvl, seed, saved: saved?.chatter });
   let cache = null; // { v, result } so delayMs and decide agree on one decision per view
 
   function think(view) {
     if (!view || typeof view !== 'object') return null;
     if (cache && cache.v === view.v && view.v !== undefined) return cache.result;
     // The variant comes from the view's public settings: one brain plays classic or 101.
-    const result = view.settings?.variant === '101' ? plan101(view, mem, p, rng, st101) : plan(view, mem, p, rng, st);
+    const result = view.settings?.variant === '101' ? plan101(view, mem, p101, rng, st101) : plan(view, mem, p, rng, st);
     cache = { v: view.v, result };
     return result;
   }
@@ -99,6 +114,8 @@ export function createBot({ level = DEFAULT_LEVEL, params, seed = 1, saved } = {
   return {
     level: lvl,
     params: { ...p },
+    params101: { ...p101 },
+    tempo,
     observe(event) {
       if (event && typeof event === 'object') mem.observe(event);
     },
@@ -110,16 +127,34 @@ export function createBot({ level = DEFAULT_LEVEL, params, seed = 1, saved } = {
     delayMs(view) {
       const res = think(view);
       if (!res) return 0;
-      let ms = BASE_DELAY[res.kind] * (1 + 0.9 * res.hardness);
-      // 101: a longer first look at the turn, then quicker table steps (the plan is already made).
+      const a = res.action;
+      const kind = a?.type === 'draw' && a.from === 'discard' ? 'take' : res.kind; // taking is a real decision
+      let ms = BASE_DELAY[kind] * (1 + 0.9 * res.hardness);
+      // 101: a longer first look at the turn, then quicker table steps (the plan is already made); opening
+      // and taking stay slow.
       if (res.first === true) ms *= 1.4;
-      else if (res.first === false) ms *= res.kind === 'discard' ? 0.7 : 0.55;
+      else if (res.first === false && kind !== 'open' && kind !== 'take') ms *= kind === 'discard' ? 0.7 : 0.55;
       if (res.kind === 'discard' && view.round.firstTurn[view.you]) ms += 500; // first look at a new hand
-      ms *= p.speed * rng.range(0.85, 1.15);
+      const speed = view.settings?.variant === '101' ? p101.speed : p.speed;
+      ms *= speed * tempo * rng.range(0.85, 1.15);
       return Math.round(Math.min(MAX_DELAY, Math.max(MIN_DELAY, ms)));
     },
+    /**
+     * Table talk (chatter.js): give it a public event; it may answer with an emote id. It sees only the event's
+     * type, seat and round, never the hand, so what it says carries no information about the bot's tiles.
+     */
+    chat(event) {
+      if (!event || typeof event !== 'object' || event.to !== undefined) return null;
+      chatter.setSeat(mem.you);
+      return chatter.chat({ type: event.type, seat: event.seat, round: event.round });
+    },
+    /** A human has been thinking a while (online): maybe 'hadi'. */
+    hurry() {
+      return chatter.hurry();
+    },
     snapshot() {
-      return structuredClone({ v: 1, level: lvl, params: p, rng: rng.state(), memory: mem.snapshot(), state: st, state101: st101 });
+      return structuredClone({ v: 2, level: lvl, custom, rng: rng.state(), memory: mem.snapshot(), state: st, state101: st101,
+        tempo, chatter: chatter.snapshot() });
     },
   };
 }

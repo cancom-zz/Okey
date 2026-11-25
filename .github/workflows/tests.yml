@@ -5,7 +5,7 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -16,3 +16,9 @@ jobs:
         run: npm test
       - name: Worker bundles
         run: npx wrangler deploy --dry-run --outdir /tmp/okey-dryrun
+      - name: Playwright browser
+        run: npx playwright install --with-deps chromium
+      - name: Layout + practice end to end (Playwright)
+        run: node test/layout.pw.mjs
+      - name: Online end to end against wrangler dev (Playwright)
+        run: node test/online.pw.mjs

@@ -2,9 +2,9 @@
 // Tiles are absolutely positioned by slot, so moves glide by CSS transition. Drag with pointer events
 // (touch + mouse): neighbours slide aside live; drop on the rack, on your discard spot or on the centre (finish).
 import { COLS, TIERS } from './config.js';
-import { tileClass, tileInner, arrange as arrangeIds, layoutGroups } from './tiles.js';
+import { tileClass, tileInner, tileLabel, arrange as arrangeIds, layoutGroups } from './tiles.js';
 import { loadRack, saveRack } from './store.js';
-import { sfx } from './sound.js';
+import { sfx, buzz } from './sound.js';
 import { dur, reduced } from './anim.js';
 
 // Put `id` at slot `to`; occupied slots shift toward the nearest gap in that tier. Pure: returns a new array.
@@ -25,8 +25,8 @@ export function moveIn(slots, id, to, cols = COLS) {
 }
 
 // Lay groups out tier by tier with one gap between them (fewer gaps when it would not fit).
-export function layoutFromGroups(groups, cols = COLS) {
-  const SLOTS = cols * TIERS;
+export function layoutFromGroups(groups, cols = COLS, tiers = TIERS) {
+  const SLOTS = cols * tiers;
   // sets keep a gap between them; loose leftovers too when there is room, else they close up
   for (const [setGap, looseGap] of [[1, 1], [1, 0], [0, 0]]) {
     const s = Array(SLOTS).fill(null);
@@ -34,7 +34,7 @@ export function layoutFromGroups(groups, cols = COLS) {
     for (const g of groups) {
       if (!g.length) continue;
       if (col + g.length > cols) {
-        if (tier + 1 < TIERS && g.length <= cols) { tier++; col = 0; } else { ok = false; break; }
+        if (tier + 1 < tiers && g.length <= cols) { tier++; col = 0; } else { ok = false; break; }
       }
       g.forEach((id, i) => { s[tier * cols + col + i] = id; });
       col += g.length + (g.loose ? looseGap : setGap);
@@ -47,30 +47,44 @@ export function layoutFromGroups(groups, cols = COLS) {
 export class Rack {
   constructor(host, opts = {}) {
     this.host = host; this.opts = opts;
-    this.cols = COLS;
+    this.cols = COLS; this.tiers = TIERS;
     this.slots = Array(COLS * TIERS).fill(null);
     this.marks = []; this.flags = new Map();
     this.preview = null; this.okey = null; this.key = null;
     this.els = new Map(); this.selected = null; this.hidden = new Set();
     this.tw = 28; this.th = 42; this.gap = 2; this.tierGap = 8; this.padX = 0;
-    host.innerHTML = '<div class="rack-tiers" aria-hidden="true"><i class="ledge l0"></i><i class="ledge l1"></i></div><div class="rack-tiles" role="list"></div>';
+    host.innerHTML = '<div class="rack-tiers" aria-hidden="true"></div><div class="rack-tiles" role="list"></div>';
     this.box = host.querySelector('.rack-tiles');
     this.box.addEventListener('pointerdown', e => this.down(e));
     this.box.addEventListener('click', e => this.emptyTap(e));
     this.drag = null; this.lastTap = { id: null, t: 0 };
   }
 
-  // 13 slots a tier for classic Okey, 15 for 101's 22-tile hands. Tiles keep their groups when it changes.
-  setCols(cols) {
-    if (cols === this.cols) return;
+  // The rack's shape: 2 × 13 for classic Okey; 101's 22-tile hands get 2 × 15, or 3 × 11 on portrait phones so the
+  // tiles stay big enough to read and drag. Tiles keep their groups when the shape changes.
+  setCols(cols, tiers = this.tiers) {
+    if (cols === this.cols && tiers === this.tiers) return;
     const groups = this.groups();
-    this.cols = cols;
-    this.slots = layoutFromGroups(groups, cols);
+    this.cols = cols; this.tiers = tiers;
+    this.slots = layoutFromGroups(groups, cols, tiers);
     this.setSize(this.tw, this.gap);
+  }
+  // the wooden tiers: a shaded bed and a lip under each row of tiles
+  drawTiers() {
+    const el = this.host.querySelector('.rack-tiers'), key = this.tiers;
+    if (el.dataset.n === String(key)) return;
+    el.dataset.n = key;
+    let html = '';
+    for (let i = 0; i < this.tiers; i++) {
+      html += `<i class="tbg" style="top:calc(var(--tw) * .24 + ${i} * (var(--th) + var(--tg)))"></i>`
+        + `<i class="ledge" style="top:calc(var(--tw) * .24 + ${i + 1} * var(--th) + ${i} * var(--tg) - var(--tw) * .1)"></i>`;
+    }
+    el.innerHTML = html;
   }
   setSize(tw, gap) {
     this.tw = tw; this.th = Math.round(tw * 1.5); this.gap = gap; this.tierGap = Math.max(5, Math.round(tw * 0.32));
-    const W = this.cols * tw + (this.cols - 1) * gap, H = TIERS * this.th + (TIERS - 1) * this.tierGap;
+    const W = this.cols * tw + (this.cols - 1) * gap, H = this.tiers * this.th + (this.tiers - 1) * this.tierGap;
+    this.drawTiers();
     this.host.style.setProperty('--tw', tw + 'px');
     this.host.style.setProperty('--th', this.th + 'px');
     this.host.style.setProperty('--rw', W + 'px');
@@ -96,24 +110,39 @@ export class Rack {
     const b = this.box.getBoundingClientRect();
     if (x < b.left - margin || x > b.right + margin || y < b.top - margin * 1.6 || y > b.bottom + margin) return -1;
     const col = Math.max(0, Math.min(this.cols - 1, Math.floor((x - b.left + this.gap / 2) / (this.tw + this.gap))));
-    const tier = y - b.top < this.th + this.tierGap / 2 ? 0 : 1;
+    const tier = Math.max(0, Math.min(this.tiers - 1, Math.floor((y - b.top + this.tierGap / 2) / (this.th + this.tierGap))));
     return tier * this.cols + col;
   }
 
-  setOkey(okey) { this.okey = okey; this.els.forEach((el, id) => { el.className = this.cls(id); }); }
+  setOkey(okey) { this.okey = okey; this.els.forEach((el, id) => { el.className = this.cls(id); el.setAttribute('aria-label', tileLabel(id, okey)); }); }
+  // keyboard: move the selection through the rack (dx along a tier, dy between tiers)
+  step(dx, dy) {
+    const order = this.slots.map((id, i) => [id, i]).filter(([id]) => id != null);
+    if (!order.length) return null;
+    const cur = this.selected != null ? this.slotOf(this.selected) : -1;
+    if (cur < 0) { this.selected = order[0][0]; }
+    else if (dx) { const k = order.findIndex(([, i]) => i === cur); this.selected = order[(k + dx + order.length) % order.length][0]; }
+    else {
+      const col = cur % this.cols, tier = Math.max(0, Math.min(this.tiers - 1, Math.floor(cur / this.cols) + dy));
+      const row = order.filter(([, i]) => Math.floor(i / this.cols) === tier);
+      if (row.length) this.selected = row.reduce((a, b) => (Math.abs(b[1] % this.cols - col) < Math.abs(a[1] % this.cols - col) ? b : a))[0];
+    }
+    sfx('tick'); this.render(); this.opts.onSelect && this.opts.onSelect(this.selected);
+    return this.selected;
+  }
 
   // Load the saved layout for this room + round, if it still matches the hand well enough.
   restore(key, hand) {
     this.key = key; this.selected = null;
     const saved = loadRack(key);
-    if (saved && saved.length === this.cols * TIERS) {
+    if (saved && saved.length === this.cols * this.tiers) {
       const set = new Set(hand), kept = saved.filter(x => x != null && set.has(x));
       if (hand.length && kept.length / hand.length >= 0.6) {
         this.slots = saved.map(x => (x != null && set.has(x) ? x : null));
         this.sync(hand); return true;
       }
     }
-    this.slots = Array(this.cols * TIERS).fill(null);
+    this.slots = Array(this.cols * this.tiers).fill(null);
     return false;
   }
   save() { if (this.key) saveRack(this.key, this.slots); }
@@ -132,7 +161,7 @@ export class Rack {
   }
   // Where a freshly drawn tile goes: after the last tile of the lower tier (leaving a gap), else the upper, else anywhere.
   newSlot() {
-    for (const tier of [1, 0]) {
+    for (let tier = this.tiers - 1; tier >= 0; tier--) {
       let last = -1;
       for (let c = 0; c < this.cols; c++) if (this.slots[tier * this.cols + c] != null) last = c;
       const want = last < 0 ? 0 : last + 2;
@@ -147,7 +176,7 @@ export class Rack {
     const ids = this.tiles(); if (!ids.length) return;
     const groups = arrangeIds(ids, this.okey, mode);
     this.selected = null;
-    this.layout(layoutFromGroups(groups, this.cols));
+    this.layout(layoutFromGroups(groups, this.cols, this.tiers));
     sfx('deal');
   }
 
@@ -181,7 +210,7 @@ export class Rack {
       let el = this.els.get(id);
       if (!el) {
         el = document.createElement('div');
-        el.dataset.id = id; el.setAttribute('role', 'listitem');
+        el.dataset.id = id; el.setAttribute('role', 'listitem'); el.setAttribute('aria-label', tileLabel(id, this.okey));
         el.innerHTML = tileInner(id);
         this.box.appendChild(el); this.els.set(id, el);
         el.style.transition = 'none';
@@ -246,7 +275,7 @@ export class Rack {
       const accepted = this.opts.onDrop && this.opts.onDrop(d.target, d.id, { left: r.left, top: r.top, width: r.width, height: r.height });
       if (accepted) { this.render(); return; }
     }
-    if (!cancel && preview && d.slot >= 0) { this.slots = preview; this.save(); sfx('tick'); }
+    if (!cancel && preview && d.slot >= 0) { this.slots = preview; this.save(); sfx('rack', { level: 0.7 }); buzz(); }
     this.render();
   }
   tap(id) {

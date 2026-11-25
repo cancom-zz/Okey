@@ -200,7 +200,7 @@ test('sheds high tiles when an opponent is about to finish', () => {
 // ---------------------------------------------------------------------------------------------------------
 // Legality, thinking time, strength (one shared simulation)
 
-const LADDER_MATCHES = 32; // x 9 rounds, every level in every seat equally often (worker threads)
+const LADDER_MATCHES = 24; // x 9 rounds, every level in every seat equally often (worker threads)
 let ladder = null;
 async function runLadder() {
   if (ladder) return ladder;

@@ -108,8 +108,8 @@ export function playTable({ variant, levels, rounds, seed }) {
   return { levels, wins: r.wins, points: r.points, actions: r.actions, empty: r.empty, delays, rounds };
 }
 
-/** Play independent tables in parallel worker threads, at most one per CPU (results in job order). */
-export async function runTables(jobs, limit = Math.max(1, Math.min(4, availableParallelism()))) {
+/** Play independent tables in parallel worker threads (half the CPUs: the two bot test files run side by side, next to timing-sensitive engine tests). Results in job order. */
+export async function runTables(jobs, limit = Math.max(1, Math.floor(availableParallelism() / 2))) {
   const out = new Array(jobs.length);
   let next = 0;
   const one = (job) => new Promise((resolve, reject) => {

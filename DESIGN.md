@@ -38,11 +38,15 @@ site/                      static, public
   shared/okey101/          101 Okey engine, same API shape (game.js rules.js index.js; tiles/rng from okey/)
   shared/bots/             bot brains, pure (index.js exports createBot)
   shared/host.js           TableHost: the room protocol (seats, bots, timers, views) with no I/O
-  js/local.js              LocalTable: runs a TableHost in the browser for solo practice vs bots
+  shared/achievements.js   stats + achievements rules, pure, used by the Stats DO and the client
+  js/local.js              LocalTable: runs a TableHost for solo practice vs bots (in local-worker.js)
+  js/local-worker.js       the solo TableHost in a module Web Worker
+  js/stats.js              Stats sheet, practice recording, unlock toasts, device transfer (css/stats.css)
+  _headers                 CSP and security headers for the deployed site
 worker/
-  index.js                 routing
+  index.js                 routing (+ security.js: Origin check, body limits)
   room.js                  Room Durable Object: a TableHost + WebSockets + storage
-  stats.js                 Stats Durable Object (phase 2)
+  stats.js                 Stats Durable Object (logic in stats-store.js: stats, transfer codes, rate limits)
 test/                      node --test files (engine, bots, host) + Playwright tests (*.pw.mjs)
 ```
 
@@ -81,8 +85,12 @@ host.nextWakeAt() -> ms | null
 - `onResult(summary)` fires at every round end (`type: 'round'`) and at match end (`type: 'match'`, right
   after the last round's): `{ type, code, match, round, at, winner, kind, okeyFinish, winners, seats: [{ seat,
   kind, playerId, secret, name, botLevel, won, finish, okeyFinish, delta, score, turns, showedIndicator }] }`.
-  `delta` is the seat's total score change in that round (indicator penalties included); `secret` lets the
-  Stats DO check the id. Never sent to clients.
+  `delta` is the seat's total score change in that round (indicator and 101 penalties included); `secret` lets
+  the Stats DO check the id (online it is the SHA-256 hex digest: the Room hashes a hello's secret before the
+  host sees it, so snapshots and summaries never hold a clear secret). Never sent to clients. Every summary
+  has `variant`; 101 round summaries add `elden`, `multiplier` and per seat `opened` ('sets' | 'pairs' |
+  null), `openingValue`, `openingPairs`, `islek` (işlek penalties paid), `islekPoints`, `elden`.
+- The host compares secrets in constant time (`safeEqual`).
 - Exports used by clients: `AVATARS`, `BOT_AVATAR`, `LEVELS`, `EMOTES` (must equal `site/js/config.js`; a test
   checks), `BOT_PARAM_RANGES`, `cleanName`, `cleanSettings`.
 
@@ -91,10 +99,17 @@ host.nextWakeAt() -> ms | null
 - **Solo practice:** `site/js/local.js` wraps a TableHost in the page with `setTimeout`. Same protocol, same
   bots, same views. Works offline and inside a claude.ai artifact (playtest). Practice results are local
   only and never count toward server stats. `createSoloTable({ name, avatar, levels: [l1, l2, l3], settings?,
-  autoStart = true, resume = false, onResult? })` returns a `LocalTable` that, on `connect()`, says hello,
-  sits you in seat 0 (host), adds the three bots and starts. It saves its snapshot in localStorage
+  autoStart = true, resume = false, onResult?, worker? })` returns a `LocalTable` that, on `connect()`, says
+  hello, sits you in seat 0 (host), adds the three bots and starts. It saves its snapshot in localStorage
   (`okey.solo`) after every change; `hasSoloTable()` says whether one can be resumed
-  (`createSoloTable({ ..., resume: true })`). Messages are delivered asynchronously, as JSON copies.
+  (`createSoloTable({ ..., resume: true })`). Messages are delivered asynchronously, as copies. `onResult`
+  defaults to `stats.js` `recordPractice` (practice stats on the device).
+- **The solo host runs in a module Web Worker** (`local-worker.js`, built on the same `createRunner` as the
+  in-page host), so bot thinking (up to ~190 ms a 101 step) never blocks animations. The worker posts each
+  snapshot (`{ at, host }`) to the page, which writes localStorage. It falls back to the page when Workers are
+  missing, the worker fails to load or doesn't answer within 4 s, with `?worker=0`, and when the page's timers
+  are not native (a test clock such as Playwright's `page.clock`, which a worker would escape).
+  `table.mode` / `globalThis.__okeyLocalMode` say which (`'worker'` | `'page'`).
 
 The client talks to either through one interface (`site/js/net.js`): `connect()`, `send(msg)`,
 `onmessage(msg)`, `close()`.
@@ -306,7 +321,16 @@ reconnect restores it.
   Codes are 6 characters from `ABCDEFGHJKLMNPQRSTUVWXYZ23456789` (crypto random). Lower case is accepted.
 - `GET /api/rooms/:code` -> `host.summary()` for the join screen (404 if no such room; no hidden information).
 - `GET /api/rooms/:code/ws` upgrades to a WebSocket handled by the Room DO (404 if no such room).
-- `GET /api/stats/:playerId` -> `{ name, stats, achievements: [{ id, at }] }` (404 when none yet).
+- `POST /api/stats` `{ id, secret }` -> `{ name, stats, achievements: { id: ms } }`: your own stats only (403 on a
+  wrong secret; empty stats when nothing is recorded yet). There is no way to read stats by id alone.
+- `POST /api/transfer` `{ id, secret, name, avatar, practice: { stats, ach } }` -> `{ code, expires }`;
+  `POST /api/transfer/claim` `{ code }` -> `{ id, secret, name, avatar, practice }` (404: unknown, used or
+  expired). See "Device transfer".
+- Every POST and WebSocket upgrade with an `Origin` header must come from this site (or `localhost` /
+  `127.0.0.1` for `wrangler dev`, or `env.ALLOWED_ORIGINS`), else 403. Bodies are size-capped (rooms 2 KB,
+  stats 500 B, transfer 32 KB). Rate limits (fixed windows in the Stats DO, keyed by a digest of the IP):
+  30 rooms/IP/hour and 3,000/hour overall, 300 stats reads/IP/10 min, 10 transfer codes/IP/hour and 5/identity/
+  hour, 10 code redemptions/IP/10 min. 429 when exceeded.
 
 Client -> server:
 
@@ -371,6 +395,14 @@ socket is closed), `full` (12 sockets), `notHost`, `notSeated`, `seatTaken`, `ba
 - Rooms are deleted by an alarm after 30 minutes without connections. Frames over 4096 characters or invalid
   JSON are rejected (`badMessage`); messages over 2000 characters once parsed too.
 - Views are built field by field (whitelist), never by passing engine objects through.
+- Secrets at rest are SHA-256 digests (Room snapshots, Stats profiles), compared in constant time. Transfer
+  rows are AES-GCM encrypted with a key derived from the code and stored under the code's digest.
+- `site/_headers` (deployed site only): CSP `default-src 'self'` (scripts, workers, connections self only; styles
+  self + inline attributes; images self + data:), `frame-ancestors 'none'`, nosniff, strict-origin-when-cross-
+  origin referrers, a Permissions-Policy denying camera/microphone/geolocation/payment/usb. API responses set
+  nosniff and no-store themselves.
+- Tests: `test/host.test.mjs` (classic) and `test/security101.test.mjs` (101) check every message at send time
+  against the true match; `test/online.pw.mjs` checks every WebSocket frame two real browsers receive.
 
 ## Bots (`site/shared/bots/`)
 
@@ -603,18 +635,70 @@ first step of a turn slower and the table steps quicker). An illegal or missing 
 `timeoutAction` step, and a bot turn longer than `MAX_BOT_STEPS_101` (40) steps is finished by auto-play. A
 timed-out human's whole turn is auto-played (up to 64 steps).
 
-## Statistics and achievements (phase 2)
+## Statistics and achievements
 
-Recorded server side by the Room DO into the Stats DO when a round or match ends, keyed by device id (secret
-checked). The client caches its own stats locally.
+**One rule set, two recorders** (`site/shared/achievements.js`, pure):
 
-Stats: matches played/won, rounds played/won, finishes by kind (normal, pairs, okey, pairs+okey), indicators
-shown, fastest finish (turns), current/best win streak, wins vs each bot level, points lost.
+- **Online** (authoritative): the Room's `onResult` summaries go to the Stats DO, which applies them to the
+  player's profile (secret digest checked) and keeps the first time each achievement was reached.
+- **Practice**: the solo table's summaries go to `stats.js` `recordPractice`, which applies the same rules to
+  `S.stats.practice` on the device. Practice achievements are shown separately, labelled "pratik". They never
+  reach the server (except inside a transfer code, as practice).
 
-Achievements (id: tr / en): `ilk_zafer` İlk Zafer / First Win; `okey_atan` Okey Atan / Okey Finish;
-`ciftci` Çiftçi / Pairs Finish; `cifte_okey` Çifte Okey / Pairs + Okey; `gostergeci` Göstergeci / 10
-indicators shown; `seri_5` Seri / 5 wins in a row; `usta_avcisi` Usta Avcısı / beat a table of 3 experts;
-`hizli_el` Yıldırım / finish within your first 5 turns; `yuz_el` Müdavim / 100 rounds; `dost_masasi` Dost Masası /
-play a full match with 3 humans.
+API: `emptyStats()` -> `{ classic, 101 }`; `applySummary(stats, summary, seat) -> { stats, unlocked }` (input
+untouched); `progress(stats) -> [{ id, variant, value, goal, done }]`; `unlockedIds(stats)`;
+`derived(stats, variant)` (win rates; 101: average opening, average penalty per round, open rate);
+`sanitizeStats(untrusted)`; `ACHIEVEMENTS`, `ACHIEVEMENT_IDS`. Achievements are a pure function of the
+cumulative stats, so both sides agree by construction.
 
-A device "transfer code" (phase 2) moves identity + stats to another device without accounts.
+Stats per variant: matches / won, rounds / won, round streak (current, best), match streak, fastest finish
+(own turns), okey finishes, pairs + okey finishes, wins vs each bot level (matches won at a table with it),
+matches won against three Uzman bots, matches with three other humans. Classic adds finishes by kind
+(normal, pairs, okey, pairs+okey), indicators shown, points lost. 101 adds finishes (sets, pairs), elden,
+openings (sets / pairs; average and best sets opening), işlek penalties (count, points), all penalty points
+(average per round), clean rounds (opened, no işlek penalty).
+
+Achievements (id: tr / en, goal):
+
+| id | tr | en | goal |
+|---|---|---|---|
+| `ilk_zafer` | İlk Zafer | First Win | finish a round |
+| `okey_atan` | Okey Atan | Okey Finish | finish by discarding an okey |
+| `ciftci` | Çiftçi | Pairs Finish | finish with pairs |
+| `cifte_okey` | Çifte Okey | Pairs + Okey | pairs, discarding an okey |
+| `gostergeci` | Göstergeci | Indicator | 10 indicators shown (classic) |
+| `seri_5` | Seri | Streak | 5 rounds won in a row |
+| `usta_avcisi` | Usta Avcısı | Expert Hunter | win a match against three Uzman bots |
+| `hizli_el` | Yıldırım | Lightning | finish within your first 5 turns |
+| `yuz_el` | Müdavim | Regular | 100 rounds |
+| `dost_masasi` | Dost Masası | Friends' Table | a full match with 3 other humans |
+| `elden` | Elden | Elden | 101: finish in the turn you opened |
+| `yuzbir` | Yüzbir | Hundred and One | 101: open with 150+ |
+| `temiz_masa` | Temiz Masa | Clean Table | 101: 10 rounds opened without an işlek penalty |
+| `cift_acan` | Çift Açan | Pairs Opener | 101: open with pairs |
+| `yuzbir_zafer` | Yüzbir Zaferi | 101 Victory | win a 101 match |
+
+Names and descriptions are i18n keys `ach.<id>` / `achd.<id>` (a test checks both languages).
+
+**Client** (`site/js/stats.js`, styles in `css/stats.css`): the Stats sheet has tabs Klasik / 101 and Pratik /
+Çevrimiçi, the stats of that variant and scope, and the achievements of that variant (both-variant ones in
+both) with progress bars. Online stats come from `POST /api/stats` with the device's id + secret and are cached
+in `S.stats.online`. After an online round ends (`onlineResult(view)`, called by app.js) the client refetches
+and toasts new unlocks; practice unlocks toast at once (a medal toast, a chime, a few sparks, after the
+table's own celebration). Store fields (`store.js`): `S.stats = { practice: emptyStats(), practiceAch: { id: ms },
+online: null | { stats, achievements, at } }`, all sanitized on load.
+
+## Device transfer
+
+No accounts: "Başka cihaza taşı" (Stats sheet) makes a one-time code that moves the identity (id + secret),
+name, avatar and the practice stats/achievements to another device.
+
+- `POST /api/transfer` (id + secret; if the id has a server profile, the secret must match) -> an 8-character
+  code from the room-code alphabet (40 bits, shown as `ABCD-EFGH`), valid 10 minutes, single use; a newer code
+  for the same identity replaces the older one. Stored in the Stats DO under `sha256('code:' + code)`,
+  AES-GCM encrypted with a key derived from the code; nothing readable at rest.
+- `POST /api/transfer/claim` `{ code }` (case and dashes ignored) -> the payload, deleting the row (even when
+  expired). The other device confirms, then adopts it (`stats.js` `adopt`: identity, name, avatar, practice
+  stats replaced; the online cache is dropped and refetched).
+- Rate limited (above). Both devices keep working with the same identity afterwards (a room allows one socket
+  per identity, newest wins).

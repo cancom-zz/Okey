@@ -221,7 +221,8 @@ if (only !== 'e2e') for (const [w, h] of SIZES) {
   await checkFit(p, '101 table', TABLE_SEL);
   await checkSeats(p, '101 table');
   const tw101 = await p.evaluate(() => document.querySelector('.rack .rt').getBoundingClientRect().width);
-  if (tw101 < 21) fail(`101: rack tiles only ${tw101.toFixed(1)}px wide`); else ok(`101: rack tiles ${tw101.toFixed(1)}px wide (15 a tier)`);
+  const min101 = h > w ? 28 : 21;   // portrait phones get three tiers so 101 tiles stay big
+  if (tw101 < min101) fail(`101: rack tiles only ${tw101.toFixed(1)}px wide (want ≥ ${min101})`); else ok(`101: rack tiles ${tw101.toFixed(1)}px wide`);
   if (res101 === 'result') {
     await p.screenshot({ path: join(SHOTS, `r101-${tag}.png`) });
     await checkFit(p, '101 result', ['.rv-acts .btn', '.deltas .dl', '.rverd']);
@@ -279,6 +280,23 @@ if (only !== 'layout') {
   if (!stats.added) fail('101: never added a tile to a table meld');
   ok(`101: işlek warnings confirmed: ${stats.islek}`);
   if (p.errors.length) fail(`101 e2e: page errors: ${p.errors.slice(0, 3).join(' | ')}`);
+  await p.context().close();
+}
+
+// ---- offline: the service worker precaches the app, so solo practice starts with no connection ----
+if (only !== 'layout') {
+  console.log('\noffline practice (service worker)');
+  const p = await page(390, 600);
+  await p.goto(`${BASE}/#/`);
+  const cached = await p.waitForFunction(async () => {
+    const keys = await caches.keys(); if (!keys.length) return 0;
+    const n = (await (await caches.open(keys[0])).keys()).length; return n > 40 ? n : 0;
+  }, null, { timeout: 20_000 }).then(h => h.jsonValue(), () => 0);
+  cached ? ok(`service worker precached ${cached} files`) : fail('service worker did not precache the app');
+  await p.context().setOffline(true);
+  await p.goto(`${BASE}/?anim=0#/solo`);
+  const dealt = await p.waitForSelector('.rack .rt', { timeout: 20_000 }).then(() => true, () => false);
+  dealt ? ok('offline: solo practice deals') : fail('offline: solo practice did not start');
   await p.context().close();
 }
 

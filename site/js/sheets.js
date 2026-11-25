@@ -3,7 +3,7 @@ import { t, getLang, setLang } from './i18n.js';
 import { S, save, cleanName } from './store.js';
 import { AVATARS, FELTS, SPEEDS, LEVELS, BOT_PARAMS, KOFI_URL, BOT_AVATAR } from './config.js';
 import { sheet, closeSheet, esc, $, $$, toast } from './ui.js';
-import { setSound, sfx } from './sound.js';
+import { setSound, setVolume, sfx } from './sound.js';
 import { openTip } from './tip.js';
 
 const seg = (id, opts, cur) => `<div class="seg" id="${id}">${opts.map(([v, label]) => `<button data-v="${v}" class="${String(v) === String(cur) ? 'on' : ''}">${label}</button>`).join('')}</div>`;
@@ -18,6 +18,8 @@ export function openSettings(onChange) {
   sheet(`<h2>${t('settings.title')}</h2>
     <div class="opt"><span>${t('settings.lang')}</span>${seg('sLang', [['tr', 'Türkçe'], ['en', 'English']], getLang())}</div>
     <div class="opt"><span>${t('settings.sound')}</span>${seg('sSound', [['1', t('on')], ['0', t('off')]], S.settings.sound ? '1' : '0')}</div>
+    <div class="opt"><span>${t('settings.volume')}</span><input type="range" class="vol" id="sVol" min="0" max="100" step="5" value="${Math.round((S.settings.volume ?? 0.8) * 100)}" aria-label="${esc(t('settings.volume'))}"></div>
+    <div class="opt"><span>${t('settings.haptics')}</span>${seg('sHap', [['1', t('on')], ['0', t('off')]], S.settings.haptics !== false ? '1' : '0')}</div>
     <div class="opt"><span>${t('settings.speed')}</span>${seg('sSpeed', Object.keys(SPEEDS).map(k => [k, t('speed.' + k)]), S.settings.speed)}</div>
     <div class="opt"><span>${t('settings.felt')}</span><div class="swatches" id="sFelt">${FELTS.map(f => `<button data-v="${f}" class="sw f-${f} ${S.settings.felt === f ? 'on' : ''}" aria-label="${esc(t('felt.' + f))}" title="${esc(t('felt.' + f))}"></button>`).join('')}</div></div>
     <div class="opt"><span>${t('settings.profile')}</span><button class="mini" id="sProfile">${esc(S.avatar)} ${esc(S.name || t('profile.noName'))} ›</button></div>
@@ -25,6 +27,8 @@ export function openSettings(onChange) {
   wireSeg('sLang', v => { setLang(v); openSettings(onChange); onChange && onChange('lang'); });
   wireSeg('sSound', v => { setSound(v === '1'); onChange && onChange('sound'); });
   wireSeg('sSpeed', v => { S.settings.speed = v; save(); });
+  wireSeg('sHap', v => { S.settings.haptics = v === '1'; save(); if (v === '1' && navigator.vibrate) navigator.vibrate(12); });
+  const vol = $('#sVol'); vol.oninput = () => setVolume(+vol.value / 100); vol.onchange = () => sfx('stack');
   $('#sFelt').onclick = e => { const b = e.target.closest('button'); if (!b) return; S.settings.felt = b.dataset.v; save(); applyFelt(); $$('#sFelt button').forEach(x => x.classList.toggle('on', x === b)); sfx('tick'); };
   $('#sProfile').onclick = () => openProfile(false, () => { onChange && onChange('profile'); });
   $('#sRules').onclick = () => openRules(); $('#sAbout').onclick = openAbout; $('#sTip').onclick = openTip;
@@ -52,30 +56,12 @@ const defaultName = () => t('profile.default') + ' ' + Math.floor(100 + Math.ran
 
 export function openRules(variant = 'classic') {
   sheet(`<h2>${t('rules.title')}</h2><div class="seg sm rtabs" id="rTabs"><button data-v="classic" class="${variant !== '101' ? 'on' : ''}">${t('rules.tabClassic')}</button><button data-v="101" class="${variant === '101' ? 'on' : ''}">${t('rules.tab101')}</button></div>
-    <div class="rules" id="rBody">${t(variant === '101' ? 'rules101.html' : 'rules.html')}</div>`, { cls: 'tall' });
+    <div class="rules" id="rBody">${t(variant === '101' ? 'rules101.html' : 'rules.html')}</div>${matchMedia('(pointer:fine)').matches ? `<p class="muted small keys">${t('rules.keys')}</p>` : ''}`, { cls: 'tall' });
   wireSeg('rTabs', v => { $('#rBody').innerHTML = t(v === '101' ? 'rules101.html' : 'rules.html'); $('#rBody').scrollTop = 0; });
 }
 
-const ACH = ['ilk_zafer', 'okey_atan', 'ciftci', 'cifte_okey', 'gostergeci', 'seri_5', 'usta_avcisi', 'hizli_el', 'yuz_el', 'dost_masasi'];
-export function openStats() {
-  const p = S.stats.practice;
-  const pct = (a, b) => (b ? Math.round((a / b) * 100) + '%' : '—');
-  sheet(`<h2>${t('stats.title')}</h2>
-    <h3>${t('stats.practice')}</h3>
-    <div class="kv">
-      <span>${t('stats.rounds')}</span><span>${p.rounds}</span>
-      <span>${t('stats.roundsWon')}</span><span>${p.won} <small>${pct(p.won, p.rounds)}</small></span>
-      <span>${t('stats.matches')}</span><span>${p.matches} / ${p.matchesWon}</span>
-      <span>${t('stats.finishSets')}</span><span>${p.finishes.sets}</span>
-      <span>${t('stats.finishOkey')}</span><span>${p.finishes.okey}</span>
-      <span>${t('stats.finishPairs')}</span><span>${p.finishes.pairs + p.finishes.pairsOkey}</span>
-      <span>${t('stats.bestStreak')}</span><span>${p.bestStreak}</span>
-    </div>
-    <p class="muted small">${t('stats.practiceNote')}</p>
-    <h3>${t('stats.achievements')}</h3>
-    <div class="ach">${ACH.map(id => `<div class="ac ${S.stats.ach[id] ? 'on' : ''}"><div class="t">${t('ach.' + id)}</div><div class="d">${t('achd.' + id)}</div></div>`).join('')}</div>
-    <p class="muted small">${t('stats.serverNote')}</p>`, { cls: 'tall' });
-}
+// The Stats sheet (tabs, achievements with progress, device transfer) lives in stats.js.
+export function openStats(opts) { import('./stats.js').then((m) => m.openStats(opts)); }
 
 export function openAbout() {
   sheet(`<h2>${t('about.title')}</h2>

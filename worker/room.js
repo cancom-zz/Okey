@@ -5,11 +5,15 @@
 //   - The host's snapshot is saved to storage after every change; the host is rebuilt lazily on wake.
 //   - One alarm serves both the host's timers (turns, bots, next round) and the idle cleanup: 30 minutes
 //     without a socket deletes the room.
+//   - Secrets never reach the host in clear: a hello's `player.secret` is replaced by its SHA-256 hex digest
+//     first, so snapshots and stats summaries only ever hold digests. Socket events are handled one at a time
+//     (a queue), so a message can't overtake a hello that is still being hashed.
 //   - {"t":"ping"} is answered at the edge with {"t":"pong"} without waking the room (no `now`; views
 //     carry `now` for clock sync).
 import { DurableObject } from 'cloudflare:workers';
 import { TableHost } from '../site/shared/host.js';
 import { cryptoRng } from '../site/shared/okey/index.js';
+import { sha256hex } from './stats-store.js';
 
 export const IDLE_MS = 30 * 60e3;
 const MAX_FRAME = 4096; // characters per client message
@@ -130,7 +134,17 @@ export class Room extends DurableObject {
     return new Response(null, { status: 101, webSocket: client });
   }
 
-  async webSocketMessage(ws, data) {
+  /** One socket event at a time, in arrival order. */
+  serial(fn) {
+    this.queue = (this.queue || Promise.resolve()).then(fn).catch((err) => console.error('room', err?.stack || err));
+    return this.queue;
+  }
+
+  webSocketMessage(ws, data) {
+    return this.serial(() => this.onMessage(ws, data));
+  }
+
+  async onMessage(ws, data) {
     const host = await this.load();
     const a = ws.deserializeAttachment() || {};
     if (!host || !a.connId) {
@@ -145,6 +159,9 @@ export class Room extends DurableObject {
       try { ws.send(JSON.stringify({ t: 'error', code: 'badMessage' })); } catch { /* closed */ }
       return;
     }
+    if (msg && msg.t === 'hello' && msg.player && typeof msg.player === 'object' && typeof msg.player.secret === 'string' && /^[A-Za-z0-9_-]{8,64}$/.test(msg.player.secret)) {
+      msg.player.secret = await sha256hex(msg.player.secret);
+    }
     try {
       host.message(a.connId, msg);
     } catch (err) {
@@ -157,12 +174,12 @@ export class Room extends DurableObject {
   }
 
   async webSocketClose(ws, code) {
-    await this.closed(ws);
+    await this.serial(() => this.closed(ws));
     try { ws.close(code === 1005 || code === 1006 ? 1000 : code, 'bye'); } catch { /* already closed */ }
   }
 
   async webSocketError(ws) {
-    await this.closed(ws);
+    await this.serial(() => this.closed(ws));
   }
 
   async closed(ws) {
