@@ -8,7 +8,7 @@ import { sfx, buzz } from './sound.js';
 import { Rack, layoutFromGroups } from './rack.js';
 import { tileHTML, tileClass, tileInner, tileLabel, faceHTML, okeyFace, color, num, finishCheck, arrange, loadEngine, getEngine, isOkey } from './tiles.js';
 import { load101, rules101, rackOpening, bestLayout, boardHTML, story101, rows101 } from './v101.js';
-import { flyTile, flipOver, settle, wait, dur, reduced, shake, pulse, fly, geomOf, land } from './anim.js';
+import { flyTile, flipOver, settle, wait, dur, reduced, shake, pulse, fly, geomOf, land, setSkip, skipped, sleep } from './anim.js';
 import { storyOf, deltasHTML, handGroupsHTML, podiumHTML } from './result.js';
 import { confirmSheet } from './sheets.js';
 import { maybeGuide, placeGuide, closeGuide, advanceGuide } from './guide.js';
@@ -49,7 +49,7 @@ export class TableScreen {
         ${ds(2)}${ds(1)}${ds(3)}${ds(0)}
         <div class="center">
           <div class="cring" aria-hidden="true"></div>
-          <button class="pile" id="pile" aria-label="${esc(t('table.pile'))}"><span class="pblock"><span class="pside"></span><span class="ptop tile back"></span><span class="pplate"></span></span></button>
+          <button class="pile" id="pile" aria-label="${esc(t('table.pile'))}"><span class="pblock"><span class="pplate"></span></span></button>
           <div class="ind" id="ind"><div class="indt"></div><small>${t('table.indicator')}</small></div>
           <div class="okeyis" id="okeyis" hidden><span class="arrow" aria-hidden="true">›</span><div class="okt"></div></div>
           <div class="fz" id="fz" aria-hidden="true"><span></span></div>
@@ -91,6 +91,8 @@ export class TableScreen {
     $('#bEmote', r).onclick = e => { e.stopPropagation(); const p = $('#emotes', r); p.hidden = !p.hidden; };
     $('#emotes', r).onclick = e => { const b = e.target.closest('button'); if (b) this.sendEmote(b.dataset.e); };
     r.addEventListener('pointerdown', e => { if (!e.target.closest('#emotes,#bEmote')) this.hideEmotes(); });
+    // a tap during the deal (or a slam) skips the rest of it
+    r.addEventListener('pointerdown', () => { if ((this.dealing || this.slamming) && !skipped()) setSkip(true); }, true);
     // drawing: tap or drag the pile / the left discard
     this.wireDrawSource($('#pile', r), 'pile');
     this.wireDrawSource($('.ds.d3', r), 'discard');
@@ -148,6 +150,9 @@ export class TableScreen {
     dw = Math.round(Math.max(24, dw));
     this.mwMax = Math.round(Math.max(12, Math.min(wide ? 30 : 22, tw * 0.8)));
     this.felt.style.setProperty('--dw', dw + 'px');
+    // the draw pile: stacks of five, in a small block (3 or 5 across; 101's four stacks 2 or 4 across)
+    this.pc = tall101 ? 2 : this.is101 ? 4 : land ? 5 : 3;
+    this.ps = Math.round(dw * (tall101 ? 0.68 : this.is101 ? 0.74 : land ? 0.5 : 0.47));
     this.felt.style.setProperty('--tw', tw + 'px');
     // opponents' racks are fixed-length ıstakas (15 slots, 22 in 101) of standing tile backs
     const cap = this.is101 ? 22 : 15;
@@ -421,15 +426,27 @@ export class TableScreen {
   discTop(p) { return $(`.ds.d${p} .dtop`, this.root); }
   discGeom(p) { const el = this.discTop(p); if (!el) return geomOf($(`.ds.d${p} .dstack`, this.root), this.dw, this.dw * 1.5, 0); return geomOf(el, this.dw, this.dw * 1.5, el.dataset.id != null ? tileRot(+el.dataset.id) : 0); }
 
-  // The closed pile: a block of stacked tiles whose top sinks as it empties, with an engraved count plate.
+  // The closed pile: what is left after the deal, stacks of five pushed together (you draw from the last one),
+  // with an engraved count plate.
   setPile(n) {
-    const el = $('#pile', this.root);
+    const el = $('#pile', this.root), blk = $('.pblock', el);
+    n = Math.max(0, n | 0);
     $('.pplate', el).textContent = n;
-    el.style.setProperty('--pt', (2 + Math.max(0, n) * 0.15).toFixed(1) + 'px');
     el.classList.toggle('low', n > 0 && n <= 8);
     el.classList.toggle('none', !n);
+    const pc = this.pc || 3, ps = this.ps || 22, full = Math.ceil((this.is101 ? 20 : 48) / 5);
+    el.style.setProperty('--ps', ps + 'px'); blk.style.setProperty('--pc', pc); blk.style.setProperty('--pr', Math.ceil(full / pc));
+    const stacks = Math.ceil(n / 5), last = n - (stacks - 1) * 5;
+    let have = $$('.pst', blk);
+    for (let i = have.length; i < stacks; i++) { const s = document.createElement('span'); s.className = 'pst'; s.innerHTML = '<span class="tile back"></span>'; blk.appendChild(s); }
+    for (let i = stacks; i < have.length; i++) have[i].remove();
+    have = $$('.pst', blk);
+    have.forEach((s, i) => { s.style.cssText = `--x:${i % pc};--y:${Math.floor(i / pc)};--n:${i === stacks - 1 ? last : 5}`; });
   }
-  pileGeom(k = 0) { const g = geomOf($('#pile .ptop', this.root), this.dw, this.dw * 1.5, 0); if (g) g.cy -= k * 1.4; return g; }
+  pileGeom() {
+    const ps = this.ps || 22, top = $$('#pile .pst .tile', this.root).pop();
+    return top ? geomOf(top, ps, ps * 1.5, 0) : geomOf($('#pile .pblock', this.root), ps, ps * 1.5, 0);
+  }
 
   // The indicator lies face up beside the pile; the okey (one up, same colour) wears a gold ribbon.
   setIndicator(id, faceDown = false, hidden = false) {
@@ -820,75 +837,192 @@ export class TableScreen {
     }
   }
 
-  // The deal: the pile shuffles, packets of five go out seat by seat in turn order (the dealer's extra tile last),
-  // the pile sinks in step, your tiles turn over as they land, then the indicator turns and the okey is marked.
+  // The deal, as at a kahvehane table: the tiles are swirled face down and built into stacks of five (21 × 5 + 1);
+  // two dice pick a stack and its top tile turns up as the gösterge; whole stacks go out in turn order (the starter
+  // gets one more tile); what is left stays in the middle as the draw pile. Your tiles land face down, turn up and
+  // slide into order; an okey turns upside down last. A tap skips it; reduced motion skips it.
   async deal(ev, next) {
     this.dealing = true;
     this.view = next;
     this.newRound(next);
-    const want = next.seats.map((s, i) => (i === next.you && next.hand ? next.hand.length : s.handCount || 0));
-    const d = { count: want.slice(), disc: [0, 1, 2, 3].map(() => ({ top: null, count: 0 })), pile: 106 };
-    this.disp = d;
-    const hand = next.hand || [];
-    hand.forEach(id => this.rack.hide(id, true));
+    const me = next.you, okey = next.round.okey, hand = (next.hand || []).slice();
+    const want = next.seats.map((s, i) => (i === me && next.hand ? next.hand.length : s.handCount || 0));
+    this.disp = { count: want.slice(), disc: [0, 1, 2, 3].map(() => ({ top: null, count: 0 })), pile: ev.pileCount };
+    const sorted = this.rack.slots.slice();
+    // my tiles come in the order they were dealt, left to right
+    const seq = Array(this.rack.slots.length).fill(null); hand.forEach((id, i) => { seq[i] = id; });
+    hand.forEach(id => this.rack.hidden.add(id));
+    this.rack.layout(seq);
+    const pileEl = $('#pile', this.root); pileEl.classList.add('dealing');
     this.render();
-    for (let p = 1; p < 4; p++) { this.oppSlots(p).forEach(s => s.classList.add('hid')); this.oppCount(p); }
+    for (let p = 1; p < 4; p++) { this.oppSlots(p).forEach(x => x.classList.add('hid')); this.oppCount(p); }
     this.setIndicator(null);
-    this.setPile(106);
-    const pile = $('#pile', this.root);
-    sfx('shuffle');
-    pile.classList.add('shuffling');
-    await wait(480);
-    pile.classList.remove('shuffling');
-    // every target is measured now, before anything moves (the racks are fixed-length, so nothing shifts)
-    const pileG = this.pileGeom();
-    const me = next.you, base = want.map((n, i) => (i === ev.dealer ? n - 1 : n)), given = [0, 0, 0, 0];
-    const order = [1, 2, 3, 0].map(k => (ev.dealer + k) % 4);
-    const slots = [0, 1, 2, 3].map(seat => (seat === me || this.pos(seat) === 0 ? null : this.oppSlots(this.pos(seat))));
-    const myOrder = hand.slice();
-    const gap = this.is101 ? 95 : 125;
-    let k = 0, left = 106;
-    const flights = [];
-    const packet = (seat, from, n) => {
-      const delay = k++ * gap, p = this.pos(seat);
-      left -= n; const after = left;
-      for (let j = 0; j < n; j++) {
-        const launch = j === 0 ? () => { this.setPile(after); sfx('deal'); } : null;
-        if (seat === me) {
-          const id = myOrder[from + j], r = this.rack.slotRect(this.rack.slotOf(id));
-          flights.push(fly({ id, okey: next.round.okey, from: { ...pileG, cy: pileG.cy - j * 1.4 }, to: rectGeo(r), faceFrom: false, faceTo: true, flipAt: 'late', ms: 360, arc: 0.16, delay: delay + j * 26,
-            onLaunch: launch, onLand: () => this.rack.hide(id, false) }));
-        } else {
-          const slot = slots[seat][from + j];
-          flights.push(fly({ from: { ...pileG, cy: pileG.cy - j * 1.4 }, to: this.oppGeom(p, slot), ms: 330, arc: 0.12, delay: delay + j * 16,
-            onLaunch: launch, onLand: () => this.oppReveal(p, slot) }));
-        }
-      }
+    const board = document.createElement('div'); board.className = 'dealboard'; document.body.appendChild(board);
+    const done = () => {
+      board.remove();
+      for (let p = 1; p < 4; p++) { this.oppSlots(p).forEach(x => x.classList.remove('hid')); this.oppCount(p); }
+      this.rack.dealIn(hand.filter(id => this.rack.hidden.has(id)));
+      this.rack.faceDown(hand, false);
+      this.rack.els.forEach(el => { el.style.transition = ''; });
+      if (this.rack.slots.join() !== sorted.join()) this.rack.layout(sorted);
+      this.rack.turnOkeys(hand.filter(id => isOkey(id, okey)));
+      pileEl.classList.remove('dealing');
+      this.setPile(ev.pileCount);
+      this.setIndicator(ev.indicator);
+      this.dealing = false;
+      setSkip(false);
     };
-    while (order.some(seat => given[seat] < base[seat])) {
-      for (const seat of order) {
-        const n = Math.min(5, base[seat] - given[seat]); if (n <= 0) continue;
-        packet(seat, given[seat], n); given[seat] += n;
-      }
-    }
-    packet(ev.dealer, base[ev.dealer], want[ev.dealer] - base[ev.dealer]);   // the dealer's extra tile
-    await Promise.all(flights);
-    order.forEach(seat => { if (seat !== me && this.pos(seat)) this.oppSlots(this.pos(seat)).forEach(s => s.classList.remove('hid')); });
-    hand.forEach(id => this.rack.hide(id, false));
-    // the indicator comes off the pile, lands beside it face down and turns over; then the okey gets its ribbon
+    console.log('DBG deal start', hand.length, JSON.stringify(this.rack.slots), JSON.stringify(sorted), [...this.rack.els.values()].slice(0,3).map(e=>e.style.transform+e.className).join(' / '), this.rack.box.isConnected);
+    if (reduced()) { done(); return; }
+    try { await this.dealShow(ev, next, { me, okey, hand, want, sorted, board, pileEl }); } catch (e) { console.error(e); }
+    console.log('DBG deal shown');
+    done();
+    console.log('DBG deal done', this.rack.hidden.size, [...this.rack.els.values()].slice(0,3).map(e=>e.className).join(' / '));
+    setTimeout(() => console.log('DBG later', this.rack.hidden.size, [...this.rack.els.values()].slice(0,3).map(e=>e.className).join(' / ')), 300);
+    pulse($('.ind', this.root), 'glow', 1400);
+  }
+
+  async dealShow(ev, next, { me, okey, hand, want, sorted, board }) {
+    // the stacks' spot: the middle of the felt (the pile and the indicator are not there yet)
+    const cr = $('.center', this.root).getBoundingClientRect();
+    const W = Math.max(cr.width, 170), H = Math.max(cr.height, 120), cx = cr.left + cr.width / 2, cy = cr.top + cr.height / 2;
+    const N = 22, counts = Array(N).fill(5); counts[N - 1] = 1;   // 106 = 21 × 5 + 1
+    let fit = null;
+    for (let R = 2; R <= 6; R++) { const C = Math.ceil(N / R), ps = Math.min(this.dw * 0.66, (W * 0.94) / (C * 1.08), (H * 0.86) / (R * 1.95)); if (!fit || ps > fit.ps) fit = { R, C, ps }; }
+    const ps = Math.max(12, Math.floor(fit.ps)), xs = ps * 1.08, ys = ps * 1.95, C = fit.C, R = fit.R;
+    board.style.setProperty('--ps', ps + 'px');
+    const off = n => (5 - n) * 1.35;                     // the top tile sits lower on a shorter stack
+    const spot = i => { const r = Math.floor(i / C), inRow = Math.min(C, N - r * C), c = i % C;
+      return { left: cx - (inRow * xs - (xs - ps)) / 2 + c * xs, top: cy - (R * ys) / 2 + r * ys + ps * 0.1 }; };
+    const topG = (el) => { const n = +el.style.getPropertyValue('--n'), L = parseFloat(el.style.left), T = parseFloat(el.style.top); return { cx: L + ps / 2, cy: T + off(n) + ps * 0.75, w: ps, h: ps * 1.5, rot: 0 }; };
+    const mkStack = (left, top, n) => { const el = document.createElement('div'); el.className = 'dstk'; el.style.cssText = `left:${left}px;top:${top}px;--n:${n}`; el.innerHTML = '<span class="tile back"></span>'; board.appendChild(el); return el; };
+    // move a stack so its top tile lands on a target pose (scaled to the target's size, turned to its rotation)
+    const glide = (el, to, ms, delay = 0, arc = 0.14) => {
+      const g = topG(el), oy = g.cy - parseFloat(el.style.top);
+      el.style.transformOrigin = `${ps / 2}px ${oy}px`;
+      const dx = to.cx - g.cx, dy = to.cy - g.cy, sc = to.w / ps, r = to.rot || 0, lift = Math.min(60, Math.hypot(dx, dy) * arc);
+      return el.animate([{ transform: 'none' }, { transform: `translate(${dx / 2}px,${dy / 2 - lift}px) rotate(${r / 2}deg) scale(${((1 + sc) / 2) * 1.04})` },
+        { transform: `translate(${dx}px,${dy}px) rotate(${r}deg) scale(${sc})` }], { duration: dur(ms), delay: dur(delay), easing: 'cubic-bezier(.33,0,.2,1)', fill: 'forwards' }).finished.catch(() => {});
+    };
+
+    // 1. the swirl: tile backs circle on the cloth, then each settles where a stack will stand
+    sfx('shuffle');
+    const stacks = counts.map((n, i) => { const p = spot(i), el = mkStack(p.left, p.top, n); el.style.opacity = '0'; return el; });
+    const swirl = stacks.map((st, i) => {
+      const g = topG(st), el = document.createElement('div');
+      el.className = 'tile back loose'; el.style.cssText = `--tw:${ps}px;left:${g.cx - ps / 2}px;top:${g.cy - ps * 0.75}px`;
+      board.appendChild(el);
+      const a0 = Math.random() * Math.PI * 2, rx = W * (0.22 + Math.random() * 0.2), ry = H * (0.16 + Math.random() * 0.16), r0 = Math.random() * 360;
+      const at = k => { const a = a0 + k * 1.35; return `translate(${cx + Math.cos(a) * rx * (1 - k * 0.12) - g.cx}px,${cy + Math.sin(a) * ry * (1 - k * 0.12) - g.cy}px) rotate(${r0 + k * 95}deg)`; };
+      return el.animate([{ transform: at(0), opacity: 0, offset: 0 }, { transform: at(0.4), opacity: 1, offset: 0.12 }, { transform: at(1), offset: 0.42 }, { transform: at(1.7), offset: 0.68, easing: 'cubic-bezier(.3,.6,.3,1)' },
+        { transform: `translate(0,0) rotate(${(i % 3) - 1}deg)`, offset: 1 }], { duration: dur(720), delay: dur(i * 6), easing: 'linear', fill: 'both' }).finished.catch(() => {});
+    });
+    await Promise.all(swirl);
+    console.log('DBG await Promise.all(swirl);');
+    stacks.forEach(st => { st.style.opacity = ''; });
+    board.querySelectorAll('.loose').forEach(x => x.remove());
+    sfx('stack');
+
+    // 2. the dice: thrown from the dealer's side, they tumble and settle; their total counts to a stack
+    const dealerEl = $(this.pos(ev.dealer) === 0 ? '.mine .plate' : `.seat.p${this.pos(ev.dealer)} .plate`, this.root);
+    const dr = dealerEl ? dealerEl.getBoundingClientRect() : cr;
+    const dd = Math.round(Math.max(14, Math.min(26, ps * 0.8))), PIPS = [[4], [0, 8], [0, 4, 8], [0, 2, 6, 8], [0, 2, 4, 6, 8], [0, 2, 3, 5, 6, 8]];
+    const v = [1 + Math.floor(Math.random() * 6), 1 + Math.floor(Math.random() * 6)];
+    const face = (el, n) => el.querySelectorAll('i').forEach((p, k) => p.classList.toggle('on', PIPS[n - 1].includes(k)));
+    const dice = v.map((n, k) => {
+      const el = document.createElement('div'); el.className = 'die' + (k ? ' red' : ''); el.style.setProperty('--dd', dd + 'px');
+      el.innerHTML = '<i></i>'.repeat(9); face(el, 1 + ((n + 2) % 6));
+      const ex = cx + (k ? 0.9 : -0.9) * dd, ey = cy + (k ? -0.35 : 0.35) * dd;
+      el.style.left = ex - dd / 2 + 'px'; el.style.top = ey - dd / 2 + 'px'; board.appendChild(el);
+      const sx = dr.left + dr.width / 2 - ex + (k ? 10 : -10), sy = dr.top + dr.height / 2 - ey, spin = (k ? 1 : -1) * (540 + Math.random() * 200);
+      const a = el.animate([{ transform: `translate(${sx}px,${sy}px) rotate(0deg) scale(1.25)`, opacity: 0 }, { transform: `translate(${sx * 0.5}px,${sy * 0.5}px) rotate(${spin * 0.55}deg) scale(1.3)`, opacity: 1, offset: 0.3 },
+        { transform: `translate(${sx * 0.12}px,${sy * 0.12}px) rotate(${spin * 0.86}deg) scale(1.06)`, offset: 0.62 }, { transform: `translate(${sx * 0.03}px,${sy * 0.03}px) rotate(${spin * 0.96}deg) scale(1.1)`, offset: 0.8 },
+        { transform: `translate(0,0) rotate(${spin}deg) scale(1)` }], { duration: dur(560), delay: dur(k * 50), easing: 'cubic-bezier(.25,.6,.35,1)', fill: 'both' });
+      const roll = setInterval(() => face(el, 1 + Math.floor(Math.random() * 6)), 70);
+      return a.finished.catch(() => {}).then(() => { clearInterval(roll); face(el, n); });
+    });
+    setTimeout(() => sfx('dice'), dur(170));
+    await Promise.all(dice);
+    console.log('DBG await Promise.all(dice);');
+    const pick = (v[0] + v[1] - 1) % N, pst = stacks[pick];
+    pst.classList.add('pick');
+    await wait(260);
+    board.querySelectorAll('.die').forEach(x => x.animate([{ opacity: 1 }, { opacity: 0 }], { duration: dur(220), fill: 'forwards' }));
+
+    // 3. the picked stack's top tile turns up as the gösterge and goes beside the pile spot; the okey is marked
     this.setIndicator(ev.indicator, true, true);
-    const indTile = $('.indt .tile', this.root);
-    await fly({ from: this.pileGeom(), to: this.indGeom(), ms: 340, arc: 0.22, onLaunch: () => this.setPile(ev.pileCount), onLand: () => { indTile.style.visibility = ''; } });
+    const indTile = $('.indt .tile', this.root), from = topG(pst);
+    counts[pick]--; pst.style.setProperty('--n', counts[pick]);
     sfx('flip');
-    await flipOver($('.indt', this.root), () => this.setIndicator(ev.indicator), 520);
+    await fly({ id: ev.indicator, okey: null, from, to: this.indGeom(), faceFrom: false, faceTo: true, flipAt: 'mid', ms: 440, arc: 0.3, onLand: () => { if (indTile) indTile.style.visibility = ''; this.setIndicator(ev.indicator); } });
+    pst.classList.remove('pick');
+    board.querySelectorAll('.die').forEach(x => x.remove());
     const ok = $('#okeyis', this.root);
-    if (ok && !reduced()) {
+    if (ok && dur(320)) {
       ok.animate([{ opacity: 0, transform: 'translateX(-8px) scale(.85)' }, { opacity: 1, transform: 'none' }], { duration: dur(320), easing: 'cubic-bezier(.2,.9,.3,1.2)' });
       const rb = $('.ribbon', ok); if (rb) rb.animate([{ clipPath: 'inset(0 100% 0 0)' }, { clipPath: 'inset(0 0 0 0)' }], { duration: dur(360), delay: dur(160), fill: 'backwards', easing: 'ease-out' });
       sfx('chime');
     }
-    pulse($('.ind', this.root), 'glow', 1400);
-    this.dealing = false;
+
+    // 4. whole stacks go out, seat by seat in turn order from the dealer's right; the dealer's last packet is one more
+    let cur = (pick + 1) % N;
+    const take = n => { const out = []; for (let guard = 0; n > 0 && guard < N * 2; guard++) { if (!counts[cur]) { cur = (cur + 1) % N; continue; } const k = Math.min(n, counts[cur]); out.push([cur, k]); counts[cur] -= k; n -= k; if (!counts[cur]) cur = (cur + 1) % N; } return out; };
+    const order = [1, 2, 3, 0].map(k => (ev.dealer + k) % 4);
+    const packets = order.map(seat => { const out = []; for (let n = want[seat]; n > 0; n -= 5) out.push(Math.min(5, n)); return out; });
+    const given = [0, 0, 0, 0], flights = [], gap = this.is101 ? 52 : 76;
+    let k = 0;
+    const rounds = Math.max(...packets.map(x => x.length));
+    for (let rd = 0; rd < rounds; rd++) {
+      order.forEach((seat, oi) => {
+        const n = packets[oi][rd]; if (!n) return;
+        const p = this.pos(seat), first = given[seat]; given[seat] += n;
+        const ids = seat === me ? hand.slice(first, first + n) : null;
+        const oslots = seat !== me && p ? this.oppSlots(p).slice(first, first + n) : null;
+        let to;
+        if (ids) to = rectGeo(this.rack.slotRect(this.rack.slotOf(ids[Math.floor((ids.length - 1) / 2)])));
+        else if (oslots && oslots.length) to = this.oppGeom(p, oslots[Math.floor((oslots.length - 1) / 2)]);
+        const chunks = take(n), delay = k++ * gap;
+        chunks.forEach(([i, m], ci) => {
+          const src = stacks[i], have = +src.style.getPropertyValue('--n');
+          let el = src;
+          if (m < have) { el = mkStack(parseFloat(src.style.left), parseFloat(src.style.top) + (m - have) * 1.35, m); src.style.setProperty('--n', have - m); }
+          else src.dataset.gone = '1';
+          if (!to) { el.remove(); return; }
+          const last = ci === chunks.length - 1;
+          flights.push(sleep(dur(delay)).then(() => sfx('slide', { level: 0.6 })).then(() => glide(el, to, 330, 0, 0.12)).then(() => {
+            el.remove();
+            if (!last) return;
+            if (ids) { this.rack.dealIn(ids, this.rack.slotOf(ids[Math.floor((ids.length - 1) / 2)])); sfx('rack', { level: 0.7 }); }
+            else { oslots.forEach(x => this.oppReveal(p, x)); sfx('clack', { level: 0.35, pitch: 1.1 }); }
+          }));
+        });
+      });
+    }
+    await Promise.all(flights);
+    console.log('DBG await Promise.all(flights);');
+
+    // 5. what is left stays in the middle: the stacks slide together into the draw pile
+    this.setPile(ev.pileCount);
+    const targets = $$('#pile .pst .tile', this.root).map(x => geomOf(x, this.ps, this.ps * 1.5, 0));
+    const left = stacks.filter(x => x.isConnected && !x.dataset.gone && +x.style.getPropertyValue('--n') > 0);
+    const toPile = left.map((st, j) => { const tg = targets[Math.min(j, targets.length - 1)]; return tg ? glide(st, tg, 380, j * 30, 0.05) : Promise.resolve(); });
+    if (left.length) sfx('slide');
+    // 6. meanwhile my tiles turn face up, one after another, then slide into order
+    const flips = hand.map((id, i) => wait(i * (this.is101 ? 14 : 17)).then(() => this.rack.turnUp(id, dur(200)).then(() => { if (i % 4 === 0) sfx('tick'); })));
+    await Promise.all([...toPile, ...flips]);
+    console.log('DBG await Promise.all([...toPile, ');
+    $('#pile', this.root).classList.remove('dealing');
+    board.querySelectorAll('.dstk').forEach(x => x.remove());
+    await wait(120);
+    const st = this.is101 ? 10 : 13;
+    sorted.forEach((id, i) => { if (id == null) return; const el = this.rack.els.get(id); if (el) el.style.transition = `transform ${dur(380)}ms cubic-bezier(.3,.75,.3,1) ${dur(i * st)}ms`; });
+    this.rack.layout(sorted);
+    sfx('tick');
+    await wait(400 + sorted.reduce((m, id, i) => (id == null ? m : i), 0) * st);
+    this.rack.els.forEach(el => { el.style.transition = ''; });
+    // the okeys turn upside down last
+    const okeys = hand.filter(id => isOkey(id, okey));
+    if (okeys.length) { this.rack.turnOkeys(okeys); sfx('flip'); await wait(340); }
   }
 
   showIndicatorFx(ev, animate) {

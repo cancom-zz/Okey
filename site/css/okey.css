@@ -829,3 +829,39 @@ body:has(#modal .mask) .guide{display:none}
 .rack .rt.fj .fc{justify-content:center}
 .rack .rt.rev .fc{rotate:180deg}
 @media (prefers-reduced-motion:reduce){.rack .rt .fc{transition:none}}
+
+/* rack tiles face down (the deal) */
+.rack .rt.fd{background:radial-gradient(130% 60% at 28% 6%,rgba(255,255,255,.75),rgba(255,255,255,0) 58%),linear-gradient(168deg,#f8f1de 0%,#ece1c3 55%,#dccdaa 100%)}
+.rack .rt.fd .fc,.rack .rt.fd::before,.rack .rt.fd::after{visibility:hidden}
+
+/* ===== the draw pile: the stacks of five left after the deal, overlapping in a small block ===== */
+.pile{--ps:26px}
+.pside,.ptop{display:none}
+.pblock{position:relative;display:block;width:calc(var(--ps) * (1 + .9 * (var(--pc, 3) - 1)));height:calc(var(--ps) * 1.5 + 9px + (var(--pr, 1) - 1) * var(--ps) * 1.02)}
+.pst{position:absolute;left:calc(var(--x) * var(--ps) * .9);top:calc(var(--y) * var(--ps) * 1.02);width:var(--ps);height:calc(var(--ps) * 1.5 + 8px)}
+/* a stack of n tiles: the top tile back, the edges of the ones under it */
+.pst .tile,.dstk .tile{--tw:var(--ps);position:absolute;left:0;top:calc((5 - var(--n, 5)) * 1.35px)}
+.pst::after,.dstk::after{content:"";position:absolute;left:0;right:0;top:calc((5 - var(--n, 5)) * 1.35px + var(--ps) * 1.5 - 3px);height:calc(var(--n, 5) * 1.35px + 3px);
+  border-radius:0 0 calc(var(--ps) * .14) calc(var(--ps) * .14);background:repeating-linear-gradient(180deg,#f1e6c6 0 1.35px,#b49a69 1.35px 2.3px);box-shadow:0 3px 5px rgba(0,0,0,.45);z-index:-1}
+.pst,.dstk{isolation:isolate}
+.pile.dealing .pblock,.pile.dealing .pplate{visibility:hidden}
+.pst.hid{visibility:hidden}
+.felt.can-draw .pst:last-child .tile{animation:beckon 1.6s ease-in-out infinite}
+@media (prefers-reduced-motion:reduce){.felt.can-draw .pst:last-child .tile{animation:none}}
+.pplate{bottom:-10px}
+
+/* ===== the deal board (in the flight layer): stacks of five, the swirl, the dice ===== */
+.dstk{position:fixed;width:var(--ps);height:calc(var(--ps) * 1.5 + 8px);will-change:transform}
+.dstk.pick .tile{box-shadow:0 0 0 2px #ffe39a,0 0 16px rgba(255,210,110,.75)}
+.loose{position:fixed;will-change:transform}
+.die{position:fixed;box-sizing:border-box;width:var(--dd);height:var(--dd);border-radius:22%;background:linear-gradient(145deg,#fffef8,#e9e2cf);box-shadow:inset 0 -2px 0 rgba(0,0,0,.18),inset 0 1px 0 #fff,0 3px 6px rgba(0,0,0,.45);
+  display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr);padding:calc(var(--dd) * .13);will-change:transform}
+.die i{width:72%;height:72%;margin:auto;border-radius:50%;background:radial-gradient(circle at 35% 30%,#6b6b6b,#111);visibility:hidden}
+.die i.on{visibility:visible}
+.die.red i.on{background:radial-gradient(circle at 35% 30%,#ff7b7b,#a5151d)}
+
+.pile.lift .pst:last-child .tile{translate:0 -6px}
+.pst .tile{transition:translate .2s}
+.dealboard{position:fixed;inset:0;pointer-events:none;z-index:39}
+.dealboard .dstk,.dealboard .loose,.dealboard .die{position:absolute}
+.dealboard .loose{--tw:var(--ps)}

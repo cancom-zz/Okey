@@ -35,6 +35,7 @@ export const EMOTES = ['clap', 'smile', 'wow', 'fire', 'think', 'hadi', 'eyvalla
 export const BOT_PARAM_RANGES = {
   memory: [0, 0.9], decay: [0.005, 1], lookahead: [1, 4], defense: [0, 1], pairsBias: [0, 2],
   blunder: [0, 1], takeDiscard: [0, 1], gamble: [0, 1], speed: [0.25, 3],
+  read: [0, 1], bluff: [0, 1], // taşlamak: reading the neighbours, and bluffing (DESIGN.md "Bots")
 };
 export const BOT_NAMES = ['Ayşe', 'Mehmet', 'Fatma', 'Ali', 'Zeynep', 'Mustafa', 'Elif', 'Hasan', 'Emine',
   'Hüseyin', 'Hatice', 'İbrahim', 'Leyla', 'Osman', 'Selin', 'Murat', 'Sevgi', 'Kemal', 'Nermin', 'Cem'];

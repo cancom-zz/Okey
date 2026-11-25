@@ -50,7 +50,7 @@ export class Rack {
     this.host = host; this.opts = opts;
     this.cols = COLS; this.tiers = TIERS;
     this.slots = Array(COLS * TIERS).fill(null);
-    this.marks = []; this.flags = new Map(); this.upright = new Set();
+    this.marks = []; this.flags = new Map(); this.upright = new Set(); this.facedown = new Set();
     this.preview = null; this.okey = null; this.key = null;
     this.els = new Map(); this.selected = null; this.hidden = new Set();
     this.tw = 28; this.th = 42; this.gap = 2; this.tierGap = 8; this.padX = 0;
@@ -183,7 +183,7 @@ export class Rack {
 
   cls(id) {
     const rev = S.settings.reverseOkey !== false && isOkey(id, this.okey) && !this.upright.has(id);
-    return tileClass(id, this.okey) + ' rt' + (rev ? ' rev' : '') + (this.selected === id ? ' sel' : '') + (this.drag && this.drag.id === id && this.drag.moved ? ' drag' : '') + (this.hidden.has(id) ? ' gone' : '') + (this.flags.has(id) ? ' ' + this.flags.get(id) : '');
+    return tileClass(id, this.okey) + ' rt' + (rev ? ' rev' : '') + (this.facedown.has(id) ? ' fd' : '') + (this.selected === id ? ' sel' : '') + (this.drag && this.drag.id === id && this.drag.moved ? ' drag' : '') + (this.hidden.has(id) ? ' gone' : '') + (this.flags.has(id) ? ' ' + this.flags.get(id) : '');
   }
   // a class on one tile (e.g. 'taken': the discard you picked up in 101 and must play)
   flag(id, cls) { this.flags.clear(); if (id != null) this.flags.set(id, cls); this.render(); }
@@ -218,6 +218,30 @@ export class Rack {
     for (const id of ids) { this.upright.delete(id); const el = this.els.get(id); if (el) el.className = this.cls(id); }
   }
   holdUpright(ids) { ids.forEach(id => this.upright.add(id)); }
+  // the deal: these tiles arrive face down (an okey stays upright until the sort is done), spreading out from one slot
+  dealIn(ids, fromSlot) {
+    const m = fromSlot != null ? this.pos(fromSlot) : null;
+    for (const id of ids) {
+      this.hidden.delete(id); this.facedown.add(id);
+      if (isOkey(id, this.okey)) this.upright.add(id);
+      const el = this.els.get(id); if (!el) continue;
+      const p = this.pos(this.slotOf(id));
+      el.style.transition = 'none';
+      if (m) el.style.transform = `translate(${m.x}px,${m.y}px)`;
+      el.className = this.cls(id); void el.offsetWidth; el.style.transition = '';
+      el.style.transform = `translate(${p.x}px,${p.y}px)`;
+    }
+  }
+  // face down (the deal: tiles arrive on the rack back up, then turn over)
+  faceDown(ids, on = true) { ids.forEach(id => { if (on) this.facedown.add(id); else this.facedown.delete(id); const el = this.els.get(id); if (el) el.className = this.cls(id); }); }
+  // turn one tile face up in place: it narrows, the face appears at the narrowest moment, it widens (no edge-on frame)
+  async turnUp(id, ms) {
+    const el = this.els.get(id); if (!el) return;
+    if (!ms) { this.faceDown([id], false); return; }
+    await el.animate([{ scale: '1 1' }, { scale: '.25 1.04' }], { duration: ms / 2, easing: 'ease-in' }).finished.catch(() => {});
+    this.faceDown([id], false);
+    await el.animate([{ scale: '.25 1.04' }, { scale: '1 1' }], { duration: ms / 2, easing: 'ease-out' }).finished.catch(() => {});
+  }
   // where a tile is drawn right now (its exact pose, mid-transition included): the start of a seamless flight
   tileGeom(id) {
     const el = this.els.get(id); if (!el) return null;

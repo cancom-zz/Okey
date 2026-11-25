@@ -9,7 +9,7 @@ import { isOkey } from '../okey/tiles.js';
 import { bestSets, bestPairs, layoffs, swaps, isIslek, tileValue } from '../okey101/rules.js';
 import { FACES, faceIndex, handVector } from './faces.js';
 import { makeContext, evaluate, strongOptions } from './evaluate.js';
-import { dangerFn } from './defense.js';
+import { dangerFn, readPrevious, tellPenalty } from './defense.js';
 
 const PILE_START = 20;
 const BLUNDER_MARGIN = 1.0;
@@ -333,7 +333,8 @@ export function plan101(view, mem, params, rng, st) {
 
   function chooseDiscard() {
     const tableTiles = table.flatMap((m) => m.tiles);
-    const live = mem.liveTable(hand, view, tableTiles);
+    const seenLive = mem.liveTable(hand, view, tableTiles);
+    const live = readPrevious(view, mem, params, seenLive);   // taşlamak, offense (read >= 0.5)
     let cands = hand.filter((t) => !okeyOf(t));
     if (!cands.length) cands = hand.slice();
     const islek = (t) => isIslek(t, table, okey, { swap: swapOn });
@@ -348,7 +349,12 @@ export function plan101(view, mem, params, rng, st) {
       lookahead: Math.min(params.lookahead, 2), pairsBias: 0, handSize: Math.max(3, hand.length - 1),
       ...(params.lookahead >= 4 ? strongOptions(live, r.pileCount) : {}),
     });
-    const danger = dangerFn(view, mem, params, live, { pileStart: PILE_START });
+    // Taşlamak, defense: harder when the next player has opened and is close to going out.
+    const next = (you + 1) % 4;
+    const nextCount = view.seats[next].handCount;
+    const urgent = r.opened[next] ? (nextCount <= 4 ? 1.8 : nextCount <= 8 ? 1.4 : 1) : 1;
+    const danger = dangerFn(view, mem, params, seenLive, { pileStart: PILE_START, urgent });
+    const handFaces = hand.map((x) => faceIndex(x, okey)).filter((f) => f < FACES);
     const pairsMode = opened === 'pairs' ||
       (!opened && S.pairsOpening !== false && bestPairs(hand, okey, { keep: 0 }).count >= Math.max(4, req.pairs - 1) &&
         bestSets(hand, okey, { ...ace, keep: 0 }).value < req.value * 0.6);
@@ -394,7 +400,8 @@ export function plan101(view, mem, params, rng, st) {
       const num = tileValue(t, okey);
       // Unopened: keep high tiles (they reach 101 sooner). Opened: shed high tiles as the round nears its end.
       const shed = opened ? valueWeight * num : 0.02 * (13 - num);
-      const pen = (danger ? danger(faceIndex(t, okey)) : 0) + (islek(t) ? 50 : 0);
+      const f = faceIndex(t, okey);
+      const pen = (danger ? danger(f) : 0) + tellPenalty(params, f, handFaces) + (islek(t) ? 50 : 0);
       // Lookahead 4, opened: a tile one live tile away from fitting the table is worth keeping like a partial.
       const bridge = opened && ctx.jokerSets
         ? BRIDGE_WEIGHT * ctx.pv[Math.min(4, bridgeOuts(t, table, okey, live))] : 0;

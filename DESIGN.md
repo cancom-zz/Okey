@@ -412,8 +412,11 @@ createBot({ level, params?, seed, saved? }) -> bot   // saved: a bot.snapshot() 
 bot.observe(event)            // the events its seat receives: eventsFor(events, seat)
 bot.delayMs(view) -> ms       // thinking time for this view (0 when it is not its move)
 bot.decide(view) -> action | null   // null when it is not its move; same decision delayMs timed (cached by view.v)
-bot.snapshot() -> JSON        // level, params, RNG state, memory, per-round state
-bot.level, bot.params         // resolved (clamped) params
+bot.snapshot() -> JSON        // level, custom params, RNG state, memory, per-round state, tempo, table talk
+bot.level, bot.params, bot.params101, bot.tempo   // resolved (clamped) params per variant; own tempo
+bot.chat(publicEvent) -> emoteId | null   // table talk (host botTalk); sees only type, seat, round
+bot.hurry() -> 'hadi' | null  // host botHurry: a human has been thinking BOT_HURRY_MS (online)
+bot.stats() -> { discards, bluffs }       // counters (tests, tuning)
 ```
 
 `view` is `viewFor(match, seat)` with the seats' `kind`/`bot`/`id` removed (host `botView`). A bot reads only:
@@ -431,17 +434,23 @@ policy, `okey101.js` the 101 one; `index.js` holds levels and `createBot`. **One
 snapshot), so the API is the same. No module-level mutable state: each bot owns its seeded RNG (`seededRng`,
 state in the snapshot), memory and round state. No `Math.random`.
 
-**Levels** (`LEVELS[id] = { id, name (tr), en, params }`, frozen, ladder order in `LEVEL_IDS`):
+**Levels** (`LEVELS[id] = { id, name (tr), en, params, params101 }`, frozen, ladder order in `LEVEL_IDS`):
 
-| id | name | memory | decay | lookahead | defense | pairsBias | blunder | takeDiscard | gamble | speed |
-|---|---|---|---|---|---|---|---|---|---|---|
-| `cirak` | Çırak | 0.25 | 0.12 | 1 | 0 | 0.85 | 0.25 | 0.7 | 0 | 1.35 |
-| `kalfa` | Kalfa | 0.5 | 0.07 | 2 | 0.3 | 0.95 | 0.12 | 0.6 | 0 | 1.15 |
-| `usta` | Usta | 0.7 | 0.04 | 3 | 0.6 | 1 | 0.06 | 0.4 | 0.1 | 1.0 |
-| `uzman` | Uzman | 0.85 | 0.02 | 4 | 0.85 | 1 | 0.02 | 0.3 | 0.25 | 0.9 |
+| id | name | memory | decay | lookahead | defense | pairsBias | blunder | takeDiscard | gamble | speed | read | bluff |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| `cirak` | Çırak | 0.25 | 0.12 | 1 | 0 | 0.85 | 0.25 | 0.7 | 0 | 1.35 | 0 | 0 |
+| `kalfa` | Kalfa | 0.5 | 0.07 | 2 | 0.3 | 0.95 | 0.12 | 0.6 | 0 | 1.15 | 0.3 | 0 |
+| `usta` | Usta | 0.7 | 0.04 | 3 | 0.6 | 1 | 0.09 | 0.4 | 0.1 | 1.0 | 0.7 | 0 |
+| `uzman` | Uzman | 0.85 | 0.02 | 4 | 0.85 | 1 | 0.02 | 0.3 | 0.25 | 0.9 | 0.9 | 0.12 |
 
-Custom bots override any param; `resolveParams` clamps every bot, custom ones included: memory ≤ 0.9,
-decay ≥ 0.005, lookahead 1..4, speed 0.25..3, the rest 0..1 (pairsBias 0..2). Unknown level → `kalfa`.
+`params101` (101 only, over `params`): Çırak blunder 0.32 (forgetful, impulsive); Kalfa blunder 0.22; Usta
+lookahead 2, blunder 0.13, gamble 0 (opens as soon as it can, no waiting for sets over pairs, no holding);
+Uzman unchanged. This keeps the 101 levels evenly spaced (101 is decided mostly by not opening, so it needs
+wider parameter gaps than classic).
+
+Custom bots override any param (in both variants; custom values win over `params101`); `resolveParams`
+clamps every bot, custom ones included: memory ≤ 0.9, decay ≥ 0.005, lookahead 1..4, speed 0.25..3, the rest
+0..1 (pairsBias 0..2). Unknown level → `kalfa`. Host slider ranges: `host.js` `BOT_PARAM_RANGES`.
 
 - `memory`: chance to remember each public fact when it happens (own discards: `memory + (1-memory)/2`);
   `decay`: chance per turn (each discard) to forget each remembered fact. Facts, per round: tiles discarded
@@ -463,10 +472,44 @@ decay ≥ 0.005, lookahead 1..4, speed 0.25..3, the rest 0..1 (pairsBias 0..2). 
 - `takeDiscard`: readiness to take the previous player's discard (threshold on the value gain).
 - `gamble`: with a finish in hand, an okey in it and ≥ 20 tiles in the pile, the chance to hold one more
   turn for an okey finish (double) when it believes ≥ 5 live tiles would allow it.
-- `speed`: thinking-time multiplier. `delayMs` = base by move (draw 750, discard 1000, show 1000, finish
-  1700, 101 open 1400, 101 table step 800 ms) × (1 + 0.9 × how close the call was) + 500 on a first
-  discard; in 101 × 1.4 for the first step of a turn, × 0.55 for later table steps (× 0.7 for the final
-  discard); then × speed × jitter 0.85..1.15, clamped to 350..4000 ms.
+- `read` 0..1: taşlamak, how much a bot reads its neighbours (below); `bluff` 0..1: how often it bluffs.
+- `speed`: thinking-time multiplier. `delayMs` = base by move (draw 750, taking the discard 1300, discard
+  1000, show 1000, finish 1700, 101 open 1500, 101 table step 800 ms) × (1 + 0.9 × how close the call was)
+  + 500 on a first discard; in 101 × 1.4 for the first step of a turn, × 0.55 for later table steps (× 0.7
+  for the final discard; opening and taking keep their full time); then × speed × the bot's own **tempo**
+  (seeded per bot, 0.85..1.15: one bot plays a little quicker, another more deliberately; kept in the
+  snapshot) × jitter 0.85..1.15, clamped to 350..4000 ms.
+
+**Taşlamak (reading the table, per level).** At a real table you watch what your neighbours throw and take,
+and you know they watch you. Bots do this from public information only (their view, their seat's events and
+their own imperfect, decaying memory), and read seats by position, never by who sits there (a bot treats
+humans and bots alike, so there is no collusion):
+
+- Çırak (`read` 0, `defense` 0): no reading; it throws by its own hand only.
+- Kalfa (`read` 0.3): basic defense: it avoids feeding the next player (who can take its discard) tiles next
+  to what that player picked up from it.
+- Usta (`read` 0.7): full reading. Of the next player: also what they passed on, what they threw, and the
+  colours and numbers they keep dumping (safe-ish to feed). Of the previous player (who feeds it): faces next
+  to what they collect, and colours they never throw, are counted as less likely to come, so it stops
+  waiting on them. And it knows it is being read: it avoids discards right next to the tiles it keeps (a
+  tell of what it collects) when another discard is as good.
+- Uzman (`read` 0.9, `bluff` 0.12): all of that, plus measured bluffing: now and then (seeded, more often
+  early in the round, never more than `bluff` of its discards, and only when the cost to its hand is
+  tiny) it throws a loose tile of a colour it is collecting, so a reader thinks it is dumping that colour.
+- 101: the same reading on its işlek-safe discards, and defense grows when the next player has opened and is
+  close to going out (few tiles left).
+
+Code: `defense.js` (`dangerFn`, `readPrevious`, `tellPenalty`, `bluffPick`). Test: test/taslamak.test.mjs
+(the next player picked R5 and R6 → readers stop feeding R7; bluff rate bounded and seeded).
+
+**Table talk (emotes).** Bots now and then use the preset emotes like people at a kahvehane table
+(`chatter.js`, driven by `host.js` `botTalk` / `botHurry` through the same emote path and rate limit as
+humans): 👏 / "Eyvallah" when someone else finishes, "Bol şans" at the start of a match, "Güzel oyun" at
+its end, and, online only (a real room code, not solo practice), rarely "Hadi!" when a human has been
+thinking for `BOT_HURRY_MS` (15 s). At most one per bot per round (plus one at the match end); Çırak is
+chatty, Uzman terse. Table talk hears only the public events' type, seat and round, has its own seeded RNG
+(separate from the decision RNG) and never reacts to its own draws, hand or plans, so it carries no
+information: the same public events give the same emotes whatever the hands (test/botchat.test.mjs).
 
 Always: finishes when it can (highest-scoring option: pairs+okey > pairs = okey > normal), takes a discard
 that finishes or is an okey, never discards an okey otherwise, never throws back the tile it just took.

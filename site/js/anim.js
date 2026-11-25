@@ -10,8 +10,13 @@ let mq = null;
 try { mq = matchMedia('(prefers-reduced-motion: reduce)'); } catch { /* ignore */ }
 
 export const reduced = () => animOff || !!(mq && mq.matches);
-export const dur = ms => (reduced() ? 0 : Math.round(ms * (SPEEDS[S.settings.speed] || 1)));
-export const wait = ms => { const d = dur(ms); return d > 0 ? new Promise(r => setTimeout(r, d)) : Promise.resolve(); };
+let skipping = false;   // a tap during the deal (or a slam): every remaining step is instant
+const waiting = new Set();   // pending waits, cut short by a skip
+export const setSkip = on => { skipping = !!on; if (on) { [...waiting].forEach(f => f()); document.getAnimations().forEach(a => { try { if (a.effect && a.effect.getComputedTiming().endTime !== Infinity) a.finish(); } catch { /* ignore */ } }); } };
+export const skipped = () => skipping;
+export const dur = ms => (reduced() || skipping ? 0 : Math.round(ms * (SPEEDS[S.settings.speed] || 1)));
+const pause = d => (d > 0 && !skipping ? new Promise(r => { const f = () => { waiting.delete(f); clearTimeout(h); r(); }; const h = setTimeout(f, d); waiting.add(f); }) : Promise.resolve());
+export const wait = ms => pause(dur(ms));
 export const nextFrame = () => new Promise(r => requestAnimationFrame(() => r()));
 
 const layer = () => {
@@ -113,7 +118,7 @@ export function geomOf(el, w, h, rot = 0) {
   const r = el.getBoundingClientRect();
   return { cx: r.left + r.width / 2, cy: r.top + r.height / 2, w: w ?? r.width, h: h ?? r.height, rot };
 }
-export const sleep = ms => (ms > 0 ? new Promise(r => setTimeout(r, ms)) : Promise.resolve());
+export const sleep = ms => pause(ms);
 const FLIP_AT = { early: [0.06, 0.46], mid: [0.25, 0.75], late: [0.52, 0.94] };
 
 //   faceFrom / faceTo: true = face up (needs id). flipAt: 'early' | 'mid' | 'late'. lift: arc height factor.
