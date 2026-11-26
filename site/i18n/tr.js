@@ -434,6 +434,7 @@ export default {
   "guard.title": "Okeyi atıyorsun!",
   "guard.body": "Bu taş okey: her taşın yerine geçer. Yine de atmak istiyor musun?",
   "guard.yes": "Evet, at",
+  "table.watching": "İzliyorsun · boş koltuk açılınca oturabilirsin",
   "sad.forgot": "Göstergen vardı… unuttun 😢",
   "sad.note": "Gösterge kaçtı 😢",
   "slam.okey": "OKEY ATTI!",

@@ -10,7 +10,7 @@ const tid = (c, n, copy = 0) => c * 26 + copy * 13 + (n - 1);
 
 export function renderHome(root, { solo, resume, create, join }) {
   const lv = S.settings.soloLevel;
-  root.innerHTML = `<section class="home">
+  root.innerHTML = `<section class="home"><div class="hlamp" aria-hidden="true"></div><div class="tea" aria-hidden="true"></div><div class="hrack" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
     <div class="hero">
       <div class="fan" aria-hidden="true">
         ${tileHTML(tid(0, 7), null, 'f1')}${tileHTML(tid(1, 8), null, 'f2')}${tileHTML(104, null, 'f3')}${tileHTML(tid(2, 10), null, 'f4')}${tileHTML(tid(3, 11), null, 'f5')}
@@ -22,7 +22,7 @@ export function renderHome(root, { solo, resume, create, join }) {
       <div class="door solo">
         <button class="bigbtn gold" id="hSolo"><span class="ic">🤖</span><span class="tx"><b>${t('home.solo')}</b><small>${t('home.soloSub')}</small></span><span class="chev">›</span></button>
         <button class="resume" id="hResume" hidden>↻ ${t('home.resume')}</button>
-        <div class="lvrow"><div class="seg sm" id="hVar" role="group" aria-label="${esc(t('home.variant'))}">${VARIANTS.map(x => `<button data-v="${x}" class="${x === S.settings.soloVariant ? 'on' : ''}">${t('variant.' + x)}</button>`).join('')}</div><div class="seg sm" id="hLv" role="group" aria-label="${esc(t('home.level'))}">${LEVELS.map(l => `<button data-v="${l}" class="${l === lv ? 'on' : ''}">${t('level.' + l)}</button>`).join('')}</div></div>
+        <div class="lvrow"><div class="lvg"><span class="lvl">${t('home.variant')}</span><div class="seg sm" id="hVar" role="group" aria-label="${esc(t('home.variant'))}">${VARIANTS.map(x => `<button data-v="${x}" class="${x === S.settings.soloVariant ? 'on' : ''}">${t('variant.' + x)}</button>`).join('')}</div></div><div class="lvg"><span class="lvl">${t('home.level')}</span><div class="seg sm" id="hLv" role="group" aria-label="${esc(t('home.level'))}">${LEVELS.map(l => `<button data-v="${l}" class="${l === lv ? 'on' : ''}">${t('level.' + l)}</button>`).join('')}</div></div></div>
       </div>
       <div class="door friends">
         <button class="bigbtn" id="hCreate"><span class="ic">👥</span><span class="tx"><b>${t('home.friends')}</b><small>${t('home.friendsSub')}</small></span><span class="chev">›</span></button>

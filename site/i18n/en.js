@@ -423,6 +423,7 @@ export default {
   "guard.title": "That's your okey!",
   "guard.body": "This tile is the okey: it stands in for any tile. Discard it anyway?",
   "guard.yes": "Yes, discard",
+  "table.watching": "Watching · you can sit when a seat frees up",
   "sad.forgot": "You had the indicator… and forgot 😢",
   "sad.note": "Forgot the indicator 😢",
   "slam.okey": "OKEY SLAM!",

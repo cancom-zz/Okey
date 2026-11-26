@@ -146,13 +146,17 @@ export class TableScreen {
     this.rack.setSize(tw, gap);
     // centre and discard tiles: as big as the felt between the opponents and the rack allows
     let dw = land ? Math.min(tw * (wide ? 1.12 : 1.0), wide ? 62 : 42, H / 9) : Math.min((H - 300) / 5.2, 54, (W - 200) / 2.6);
-    if (this.is101) dw = Math.min(dw, land ? 34 : 28);   // the middle also holds the melds
+    if (this.is101) dw = Math.min(dw, wide ? 46 : land ? 34 : 28);   // the middle also holds the melds (laptops have room)
     dw = Math.round(Math.max(24, dw));
     this.mwMax = Math.round(Math.max(12, Math.min(wide ? 30 : 22, tw * 0.8)));
     this.felt.style.setProperty('--dw', dw + 'px');
+    // discards are sized from the rack's tiles (a little smaller), so they never dominate the corners
+    const dsw = Math.round(Math.max(20, Math.min(tw * 0.86, land ? 64 : 40)));
+    this.dsw = dsw; this.felt.style.setProperty('--dsw', dsw + 'px');
     // the draw pile: stacks of five, in a small block (3 or 5 across; 101's four stacks 2 or 4 across)
-    this.pc = tall101 ? 2 : this.is101 ? 4 : land ? 5 : 3;
-    this.ps = Math.round(dw * (tall101 ? 0.68 : this.is101 ? 0.74 : land ? 0.5 : 0.47));
+    this.pc = tall101 ? 4 : this.is101 ? 4 : land ? 5 : 3;
+    this.ps = Math.round(Math.max(16, dw * (tall101 ? 0.62 : this.is101 ? 0.8 : land ? 0.5 : 0.47)));
+    this.mwMin = tall101 ? 18 : 11;   // meld tiles: never below 18 px on a phone (the board scrolls instead)
     this.felt.style.setProperty('--tw', tw + 'px');
     // opponents' racks are fixed-length ıstakas (15 slots, 22 in 101) of standing tile backs
     const cap = this.is101 ? 22 : 15;
@@ -235,6 +239,8 @@ export class TableScreen {
     const r = v.round;
     const root = this.root;
     root.querySelector('.tbl').dataset.phase = v.phase;
+    this.felt.classList.toggle('spect', v.you == null);
+    $('#rack', root).dataset.spect = t('table.watching');
     for (let p = 0; p < 4; p++) {
       const seat = this.seatAt(p), s = v.seats[seat] || {};
       const el = $(`.seat.p${p}`, root);
@@ -289,10 +295,11 @@ export class TableScreen {
     const el = $('#melds', this.root); if (el.hidden) return;
     let mw = this.mwMax || 20;
     el.style.setProperty('--mw', mw + 'px');
-    for (let i = 0; i < 3 && mw > 11; i++) {
+    const lo = this.mwMin || 11;
+    for (let i = 0; i < 3 && mw > lo; i++) {
       const sh = el.scrollHeight, ch = el.clientHeight;
       if (sh <= ch + 1) break;
-      mw = Math.max(11, Math.floor(mw * Math.min(0.94, Math.sqrt(ch / sh))));
+      mw = Math.max(lo, Math.floor(mw * Math.min(0.94, Math.sqrt(ch / sh))));
       el.style.setProperty('--mw', mw + 'px');
     }
   }
@@ -427,7 +434,7 @@ export class TableScreen {
     $('.dn', el).textContent = n > 1 ? n : '';
   }
   discTop(p) { return $(`.ds.d${p} .dtop`, this.root); }
-  discGeom(p) { const el = this.discTop(p); if (!el) return geomOf($(`.ds.d${p} .dstack`, this.root), this.dw, this.dw * 1.5, 0); return geomOf(el, this.dw, this.dw * 1.5, el.dataset.id != null ? tileRot(+el.dataset.id) : 0); }
+  discGeom(p) { const w = this.dsw || this.dw, el = this.discTop(p); if (!el) return geomOf($(`.ds.d${p} .dstack`, this.root), w, w * 1.5, 0); return geomOf(el, w, w * 1.5, el.dataset.id != null ? tileRot(+el.dataset.id) : 0); }
 
   // The closed pile: what is left after the deal, stacks of five pushed together (you draw from the last one),
   // with an engraved count plate.
@@ -1218,6 +1225,7 @@ export class TableScreen {
       </div></div>`;
     el.hidden = false;
     this.felt.classList.add('resulting');
+    this.fitResultRack(el);
     const nextBtn = $('#rvNext', el);
     nextBtn.onclick = () => { nextBtn.disabled = true; nextBtn.textContent = t('result.waiting'); this.ctx.send({ t: 'next' }); };
     const home = $('#rvHome', el); if (home) home.onclick = () => this.ctx.leave();
@@ -1259,6 +1267,7 @@ export class TableScreen {
       this.pendingDiscard = null;
       await wait(200);
       rest.forEach((x, i) => { x.style.opacity = ''; x.animate([{ transform: 'translateY(10px)', opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: dur(320), delay: dur(i * 120), fill: 'backwards' }); });
+      this.countUp(el);
     }
     void card;
     this.endSlam();
@@ -1287,6 +1296,32 @@ export class TableScreen {
       this.showPodium();
     }
     tipCheck();
+  }
+  // the score deltas count up from zero (a short tick on the way)
+  countUp(el) {
+    const ms = dur(700); if (!ms) return;
+    $$('.deltas .dl b[data-v]', el).forEach((b, k) => {
+      const v = +b.dataset.v, z = b.dataset.z || '0', fmt = n => (n ? (n > 0 ? '+' : '−') + Math.abs(n) : z);
+      if (!v) return;
+      const t0 = performance.now() + dur(260 + k * 90);
+      b.textContent = fmt(0);
+      const step = now => {
+        const f = Math.max(0, Math.min(1, (now - t0) / ms)), e = 1 - (1 - f) ** 3;
+        b.textContent = fmt(Math.round(v * e));
+        if (f < 1) requestAnimationFrame(step); else if (k === 0) sfx('tick');
+      };
+      requestAnimationFrame(step);
+    });
+  }
+  // the winner's hand on one line: tiles shrink to fit (seven pairs included), never wrap
+  fitResultRack(el) {
+    const rack = $('.rv-rack', el), grp = $('.rv-groups', el); if (!rack || !grp) return;
+    const gs = $$('.rg', grp), n = $$('.tile', grp).length; if (!n) return;
+    const fin = $('.rv-fin', el), t0 = $('.tile', grp).offsetWidth, gap = gs.length > 5 ? 4 : 8;
+    const avail = rack.clientWidth - 26 - (fin ? fin.offsetWidth + 14 : 0) - gap * (gs.length - 1) - gs.length * 5;
+    const tw = Math.max(12, Math.min(t0, Math.floor(avail / n)));
+    grp.style.flexWrap = 'nowrap'; grp.style.gap = gap + 'px';
+    if (tw < t0) rack.style.setProperty('--tw', tw + 'px');
   }
   hideResult() {
     this.endSlam(); this.slamTier = 0;

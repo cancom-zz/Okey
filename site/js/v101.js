@@ -116,8 +116,8 @@ export function rows101(view) {
     const op = r.opened ? r.opened[i] : false;
     const how = i === r.winner ? t('r101.finished') : op === 'pairs' ? t('r101.openedPairs') : op ? t('r101.opened') : t('r101.notOpened');
     return `<div class="dl ${i === r.winner ? 'w' : ''} ${i === view.you ? 'me' : ''} ${total === best ? 'lead' : ''}"><span class="av">${esc(s.avatar || '🙂')}</span>
-      <span class="nm">${esc(s.name || '—')}</span><span class="how">${how}</span>
-      <b class="${d < 0 ? 'pos' : d > 0 ? 'neg' : ''}">${d > 0 ? '+' + d : d < 0 ? '−' + Math.abs(d) : '0'}</b>
+      <span class="nm">${esc(s.name || '—')}</span>${i === view.you ? `<em class="you">${t('lobby.you')}</em>` : ''}<span class="how">${how}</span>
+      <b class="${d < 0 ? 'pos' : d > 0 ? 'neg' : ''}" data-v="${d}" data-z="0">${d > 0 ? '+' + d : d < 0 ? '−' + Math.abs(d) : '0'}</b>
       ${pen ? `<span class="pen">${t('r101.penalty', { n: pen })}</span>` : ''}<small>${total}</small>${s.ready && s.kind === 'human' ? `<i class="rdy" title="${t('result.ready')}">✓</i>` : ''}</div>`;
   }).join('')}</div>`;
 }

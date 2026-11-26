@@ -5,6 +5,7 @@ import { $, $$, esc, toast, copyText, sheet } from './ui.js';
 import { openBotPicker } from './sheets.js';
 import { sfx } from './sound.js';
 import { settle } from './anim.js';
+import { tileHTML } from './tiles.js';
 
 export class LobbyScreen {
   constructor(root, ctx) {
@@ -18,7 +19,7 @@ export class LobbyScreen {
           <button class="btn sm gold" id="lShare" ${navigator.share ? '' : 'hidden'}>${t('lobby.share')}</button>
         </div>
       </div>
-      <div class="ltable"><div class="lfelt"><div class="lmark">${t('brand')}</div>
+      <div class="ltable"><div class="lfelt"><div class="lmark" aria-hidden="true"><span class="lfan">${tileHTML(13 + 6, null)}${tileHTML(104, null)}${tileHTML(52 + 8, null)}</span><b>${t('brand')}</b></div>
         ${[2, 3, 1, 0].map(p => `<div class="lseat q${p}" data-p="${p}"></div>`).join('')}
       </div></div>
       <div class="lctl" id="lCtl"></div>

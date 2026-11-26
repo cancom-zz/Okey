@@ -896,6 +896,7 @@ body:has(#modal .mask) .guide{display:none}
 /* ===================== masa örtüsü: a woven cloth on a kahvehane table =====================
    All procedural (tiny SVG tiles + gradients, cached by the browser), nothing animated except the turn breath. */
 :root{
+  --teaimg:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 34 52'%3E%3Cdefs%3E%3ClinearGradient id='t' x1='0' x2='1'%3E%3Cstop offset='0' stop-color='%237a1d0a'/%3E%3Cstop offset='.45' stop-color='%23c2461b'/%3E%3Cstop offset='1' stop-color='%236a1708'/%3E%3C/linearGradient%3E%3ClinearGradient id='g' x1='0' x2='1'%3E%3Cstop offset='0' stop-color='%23fff' stop-opacity='.55'/%3E%3Cstop offset='.3' stop-color='%23fff' stop-opacity='.08'/%3E%3Cstop offset='1' stop-color='%23fff' stop-opacity='.3'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cellipse cx='17' cy='47' rx='16' ry='4.5' fill='%23e9e2d2'/%3E%3Cellipse cx='17' cy='46.2' rx='12' ry='2.8' fill='%23c9bfa9'/%3E%3Cpath d='M8 10h18c0 6-4 9-4 15s4 9 4 15c0 3-4 5-9 5s-9-2-9-5c0-6 4-9 4-15s-4-9-4-15z' fill='url(%23t)'/%3E%3Cpath d='M6 5h22c0 3-1 4-2 5H8C7 9 6 8 6 5z' fill='%23fff' fill-opacity='.18'/%3E%3Cpath d='M6 5h22c0 7-6 10-6 20s6 13 6 16c0 4-5 6-11 6S6 45 6 41c0-3 6-6 6-16S6 12 6 5z' fill='url(%23g)' stroke='%23fff' stroke-opacity='.5' stroke-width='.8'/%3E%3Cellipse cx='17' cy='5' rx='11' ry='2' fill='none' stroke='%23fff' stroke-opacity='.7' stroke-width='.8'/%3E%3C/svg%3E");
   /* a fine crosshatch weave, 4 px repeat */
   --weave:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='4' height='4'%3E%3Cpath d='M0 .5h4' stroke='%23000' stroke-opacity='.10'/%3E%3Cpath d='M.5 0v4' stroke='%23000' stroke-opacity='.07'/%3E%3Cpath d='M0 2.5h4' stroke='%23fff' stroke-opacity='.03'/%3E%3C/svg%3E");
   /* a printed border: a small Anatolian motif (a stepped diamond with hooks) between two hairlines */
@@ -957,5 +958,252 @@ body:has(#modal .mask) .guide{display:none}
   .felt.wide{background:var(--weave) padding-box,var(--grain) padding-box,radial-gradient(ellipse 80% 70% at 50% 40%,var(--felt0),var(--felt) 58%,var(--felt2)) padding-box,
       var(--woodgrain) 0 0/500px 100% border-box,linear-gradient(140deg,#8a5428 0%,#4d2a10 30%,#7a4520 55%,#3a1f0b 80%,#6b3a18 100%) border-box}
   .felt.wide .tea{display:block;position:absolute;right:-27px;top:22px;width:30px;height:46px;z-index:8;pointer-events:none;filter:drop-shadow(0 6px 6px rgba(0,0,0,.55));
-    background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 34 52'%3E%3Cdefs%3E%3ClinearGradient id='t' x1='0' x2='1'%3E%3Cstop offset='0' stop-color='%237a1d0a'/%3E%3Cstop offset='.45' stop-color='%23c2461b'/%3E%3Cstop offset='1' stop-color='%236a1708'/%3E%3C/linearGradient%3E%3ClinearGradient id='g' x1='0' x2='1'%3E%3Cstop offset='0' stop-color='%23fff' stop-opacity='.55'/%3E%3Cstop offset='.3' stop-color='%23fff' stop-opacity='.08'/%3E%3Cstop offset='1' stop-color='%23fff' stop-opacity='.3'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cellipse cx='17' cy='47' rx='16' ry='4.5' fill='%23e9e2d2'/%3E%3Cellipse cx='17' cy='46.2' rx='12' ry='2.8' fill='%23c9bfa9'/%3E%3Cpath d='M8 10h18c0 6-4 9-4 15s4 9 4 15c0 3-4 5-9 5s-9-2-9-5c0-6 4-9 4-15s-4-9-4-15z' fill='url(%23t)'/%3E%3Cpath d='M6 5h22c0 3-1 4-2 5H8C7 9 6 8 6 5z' fill='%23fff' fill-opacity='.18'/%3E%3Cpath d='M6 5h22c0 7-6 10-6 20s6 13 6 16c0 4-5 6-11 6S6 45 6 41c0-3 6-6 6-16S6 12 6 5z' fill='url(%23g)' stroke='%23fff' stroke-opacity='.5' stroke-width='.8'/%3E%3Cellipse cx='17' cy='5' rx='11' ry='2' fill='none' stroke='%23fff' stroke-opacity='.7' stroke-width='.8'/%3E%3C/svg%3E") center/contain no-repeat}
+    background:var(--teaimg) center/contain no-repeat}
+}
+
+/* ===================== art direction pass (table) ===================== */
+/* discards: sized from the rack's tiles, sitting at the junction of the two seats they lie between, toward the middle */
+.ds{--dw:var(--dsw,var(--dw))}
+.ds.d2{justify-self:end;align-self:end}
+.ds.d1{justify-self:start;align-self:end}
+.ds.d3{justify-self:end;align-self:start}
+.ds.d0{justify-self:start;align-self:start}
+.felt.land .ds.d2{justify-self:end;align-self:end;margin:0 4% 4px 0}
+.felt.land .ds.d1{justify-self:start;align-self:end;margin:0 0 4px 4%}
+.felt.land .ds.d3{justify-self:end;align-self:start;margin:4px 4% 0 0}
+.felt.land .ds.d0{justify-self:start;align-self:start;margin:4px 0 0 4%}
+.dn{top:-8px;right:-9px}
+
+/* my plate: a real plate like the others', at the left end of my ıstaka (landscape and laptops), with the turn ring */
+.mine .plate{display:flex;align-items:center;gap:6px;padding:4px 10px 4px 4px;border-radius:12px;
+  background:linear-gradient(180deg,#33231a,#1a110a);border:1px solid rgba(216,180,90,.55);
+  box-shadow:0 3px 8px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,230,170,.14),inset 0 -1px 0 rgba(0,0,0,.5);transition:border-color .25s,box-shadow .25s}
+.mine .nm{color:#f6ecd6}
+.felt.land .mine{justify-self:end;align-self:center;margin:0 -14px 0 0;position:relative;z-index:7}
+.felt.land .mine .plate{border-radius:12px 4px 4px 12px;padding-right:18px}
+.seat.mine.turn .plate{border-color:#f1d48a}
+
+/* the okey marker: a little more presence, the ribbon legible */
+.okt .tile{--tw:calc(var(--dw) * .9)}
+.ribbon{font-size:9px;padding:2px 6px;letter-spacing:1.2px}
+.felt.wide .ribbon{font-size:10.5px}
+
+/* the reversed okey on my rack: still upside down, but unmistakable: a gold edge and a gold star */
+.rack .rt.okey.rev{box-shadow:0 0 0 1.5px #e3b33f,0 0 9px rgba(255,200,80,.55),inset 0 1px 0 #fff,0 1px 0 #b9a273,0 3px 4px rgba(0,0,0,.3)}
+.rack .rt.okey.rev .fc::after{content:"★";position:absolute;left:5%;bottom:3%;font:700 calc(var(--tw) * .3)/1 var(--sans);color:#d9a12a;text-shadow:0 0 3px rgba(255,220,120,.9),0 1px 0 #7a5410}
+.rack .rt.okey .fc::after{content:none}
+.rack .rt.okey.rev .fc::after{content:"★"}
+
+/* ===================== 101 on a portrait phone: a clear board ===================== */
+/* opponents compact (avatar plate over a thin rack at the sides), the board framed in the middle with nothing on it,
+   discards at the board's corners, and the pile + gösterge + okey in one strip above the board */
+.felt.tall101{--side:46px;grid-template-columns:var(--side) minmax(0,1fr) var(--side);column-gap:5px}
+.felt.tall101 .seat.opp.p1,.felt.tall101 .seat.opp.p3{flex-direction:column;align-items:center;gap:3px;align-self:center}
+.felt.tall101 .seat.opp.p1 .plate,.felt.tall101 .seat.opp.p3 .plate{width:46px;padding:3px 2px 4px;border-radius:10px;margin:0}
+.felt.tall101 .seat.opp.p1 .av,.felt.tall101 .seat.opp.p3 .av{width:28px;height:28px}
+.felt.tall101 .seat.opp.p1 .av .emo,.felt.tall101 .seat.opp.p3 .av .emo{font-size:15px}
+.felt.tall101 .seat.opp.p1 .nm,.felt.tall101 .seat.opp.p3 .nm{font-size:10px;max-width:42px}
+.felt.tall101 .seat.opp.p1 .tag,.felt.tall101 .seat.opp.p3 .tag{display:none}
+.felt.tall101 .seat.opp.p2 .tag{font-size:10px}
+.felt.tall101 .seat.opp.p1,.felt.tall101 .seat.opp.p1 .plate{justify-self:end}
+.felt.tall101 .seat.opp.p3{justify-self:start}
+.felt.tall101 .center{grid-template-columns:1fr auto auto auto 1fr;grid-template-rows:auto minmax(0,1fr);
+  grid-template-areas:". pile ind ok ." "melds melds melds melds melds";column-gap:12px;row-gap:6px;align-content:stretch;align-items:center}
+.felt.tall101 .center .pile{grid-area:pile}.felt.tall101 .center .ind{grid-area:ind}
+.felt.tall101 .center .okeyis{grid-area:ok;justify-self:start}
+.felt.tall101 .pplate{bottom:-7px}
+.felt.tall101 .melds{height:100%;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:none}
+.felt.tall101 .melds::-webkit-scrollbar{display:none}
+.felt.tall101 .o101,.felt.tall101 .status{max-width:calc(100% - 2 * (var(--dsw, 24px) + 14px))}
+.felt.tall101 .ds .dlbl{display:none}
+/* the board: a framed, slightly darker printed panel of cloth (every size) */
+.felt.v101 .melds{padding:6px;border-radius:12px;background:radial-gradient(ellipse at 50% 40%,rgba(0,0,0,.10),rgba(0,0,0,.24)),var(--weave);
+  border:1px solid rgba(241,212,138,.22);box-shadow:inset 0 1px 8px rgba(0,0,0,.35),0 1px 0 rgba(255,255,255,.05)}
+/* 101 portrait: the side ıstakas hold their tiles in two columns, so a seat stays short and clear of the corners */
+.felt.tall101 .seat.opp:is(.p1,.p3) .otiles{flex-wrap:wrap;column-gap:2px;width:calc(var(--bw) * 3 + 2px);height:calc(11 * (var(--bw) + 1px) - 1px)}
+/* 101 portrait: the four discards sit at the board's own corners (inside the middle column): the top two beside
+   the pile strip, the bottom two beside the opening strip; the side columns hold only the players */
+.felt.tall101 .ds.d2{grid-area:center;justify-self:start;align-self:start;margin:2px 0 0 2px;z-index:3}
+.felt.tall101 .ds.d1{grid-area:center;justify-self:end;align-self:start;margin:2px 10px 0 0;z-index:3}
+.felt.tall101 .ds.d3{grid-area:status;justify-self:start;align-self:center;margin-left:2px}
+.felt.tall101 .ds.d0{grid-area:status;justify-self:end;align-self:center;margin-right:10px}
+.felt.tall101 .center{grid-template-rows:minmax(calc(var(--dsw, 26px) * 1.5 + 8px),auto) minmax(0,1fr)}
+.felt.tall101 .o101,.felt.tall101 .status{grid-column:2;max-width:calc(100% - 2 * (var(--dsw, 24px) + 16px))}
+.felt.tall101 .o101{flex-wrap:nowrap;gap:3px;max-width:calc(100% - 2 * (var(--dsw, 24px) + 8px))}
+.felt.tall101 .o101 .cnt{padding:6px 8px;font-size:11px}.felt.tall101 .o101 .cnt b{font-size:13px}
+.felt.tall101 .o101 .chip{height:27px;padding:0 8px;font-size:11px}
+
+/* ===================== results and the podium ===================== */
+.dl .you,.pd .you{display:inline-block;margin:1px auto 0;padding:1px 6px;border-radius:999px;font:800 9.5px/1.3 var(--sans);font-style:normal;letter-spacing:.6px;text-transform:uppercase;color:#2a1d00;background:linear-gradient(#f8e2a2,#c79b3c)}
+.dl.me{border-color:rgba(241,212,138,.75);box-shadow:inset 0 0 0 1px rgba(241,212,138,.25)}
+.dl.w{animation:winGlow 2.6s ease-in-out infinite}
+@keyframes winGlow{0%,100%{box-shadow:0 0 0 1px rgba(241,212,138,.35),0 0 8px rgba(241,212,138,.18)}50%{box-shadow:0 0 0 1.5px rgba(241,212,138,.7),0 0 20px rgba(241,212,138,.45)}}
+@media (prefers-reduced-motion:reduce){.dl.w{animation:none;box-shadow:0 0 0 1.5px rgba(241,212,138,.6)}}
+.dl b{font-variant-numeric:tabular-nums}
+.podium{gap:6px}
+.pd{width:24%}
+.pd.p3 .step{height:34px;background:linear-gradient(#7a4a24,#4a2a10)}
+.pd.p3 .step b{font:800 13px/1 var(--sans);color:#e9cfa0}
+.pd.p3 .av{font-size:24px}
+.pd.me .nm{color:var(--gold2)}
+.pd.me .step{outline:2px solid rgba(241,212,138,.85);outline-offset:-2px}
+.fourth{display:none}
+
+/* ===================== art direction: home and lobby ===================== */
+/* one world: the screens around the table are the same cloth under the same lamp */
+.home,.lobby{position:relative;background:radial-gradient(ellipse 70% 46% at 50% 30%,rgba(255,232,180,.10),transparent 72%),var(--weave)}
+.hlamp,.home .tea,.hrack{display:none}
+/* tile-like segmented controls everywhere: ivory keys on a dark inlay, the chosen one raised with a gold edge */
+.seg{background:linear-gradient(#1d130b,#2b1c10);padding:3px;gap:3px;border-radius:10px;box-shadow:inset 0 1px 3px rgba(0,0,0,.6),0 1px 0 rgba(255,230,170,.12)}
+.seg button{border-radius:7px;color:#e9dcb6;background:linear-gradient(rgba(255,255,255,.06),rgba(255,255,255,.02));box-shadow:inset 0 1px 0 rgba(255,255,255,.06)}
+.seg button.on{color:#2a1d00;background:linear-gradient(168deg,#fbf3dc,#e8d9b0);box-shadow:0 0 0 1.5px #d8b45a,0 2px 0 #9c7a3c,0 3px 5px rgba(0,0,0,.45),inset 0 1px 0 #fff}
+/* home: the two pickers are labelled ("Oyun" / "Rakipler") */
+.lvrow{align-items:flex-end}
+.lvg{display:flex;flex-direction:column;gap:3px;min-width:0}
+.lvg:last-child{align-items:flex-end}
+.lvl{font:italic 600 11.5px/1 var(--serif);letter-spacing:.4px;color:rgba(241,212,138,.85);padding:0 4px}
+
+/* lobby: a brass plaque with the table code */
+.lplacard{background:linear-gradient(170deg,#f2d891 0%,#c9a04a 38%,#a47a2c 62%,#d7b764 100%);border:1px solid #7a5a1c;
+  box-shadow:inset 0 1px 0 rgba(255,250,220,.8),inset 0 -2px 0 rgba(90,60,10,.45),0 2px 0 #5c4210,0 8px 18px rgba(0,0,0,.5);position:relative}
+.lplacard::before,.lplacard::after{content:"";position:absolute;top:50%;width:7px;height:7px;margin-top:-3.5px;border-radius:50%;background:radial-gradient(circle at 35% 35%,#fff3c4,#8a6420 70%);box-shadow:0 1px 1px rgba(0,0,0,.5)}
+.lplacard::before{left:6px}.lplacard::after{right:6px}
+.lp1 span{color:#5a3f0e;text-shadow:0 1px 0 rgba(255,245,210,.6)}
+.lp1 b{color:#3a2600;text-shadow:0 1px 0 rgba(255,245,210,.75),0 -1px 0 rgba(90,60,10,.35)}
+.share{border-top-color:rgba(90,60,10,.35)}
+.share .link{color:#5a3f0e}
+.lplacard .btn.sm{background:linear-gradient(#3a2614,#22160b);color:#f1d48a;border:1px solid rgba(0,0,0,.4)}
+
+/* lobby: a miniature table, the cloth on it, four round seat plates on the rim */
+.lfelt{border-width:12px;background:var(--weave) padding-box,var(--grain) padding-box,radial-gradient(ellipse at 50% 38%,var(--felt0),var(--felt) 60%,var(--felt2)) padding-box,
+    var(--woodgrain) 0 0/400px 100% border-box,linear-gradient(140deg,#8a5428 0%,#4d2a10 30%,#7a4520 55%,#3a1f0b 80%,#6b3a18 100%) border-box}
+.lmark{display:flex;flex-direction:column;align-items:center;gap:4px;padding:0;border:0;border-radius:0;color:rgba(241,212,138,.55);font-size:clamp(16px,4.4vw,22px);text-shadow:0 1px 2px rgba(0,0,0,.4)}
+.lmark b{font-weight:400}
+.lfan{position:relative;display:flex;height:calc(var(--lt, 18px) * 1.5)}
+.lfan .tile{--tw:var(--lt, 18px);margin:0 -2px;box-shadow:0 1px 0 #b9a273,0 3px 4px rgba(0,0,0,.35)}
+.lfan .tile:nth-child(1){rotate:-12deg;translate:0 2px}.lfan .tile:nth-child(3){rotate:12deg;translate:0 2px}.lfan .tile:nth-child(2){z-index:1}
+.lseat{width:auto;gap:0}
+.lseat.q0{bottom:0;transform:translate(-50%,50%)}
+.lseat.q2{top:0;transform:translate(-50%,-50%)}
+.lseat.q1{right:0;transform:translate(50%,-50%)}
+.lseat.q3{left:0;transform:translate(-50%,-50%)}
+.spot{min-width:0;max-width:none;padding:0;border:0;background:none;box-shadow:none;gap:0;position:relative}
+.spot .av{display:grid;place-items:center;width:var(--sd, 52px);height:var(--sd, 52px);border-radius:50%;font-size:calc(var(--sd, 52px) * .5);line-height:1;
+  background:radial-gradient(circle at 40% 30%,#4a3322,#1d130b 75%);border:2px solid #b8862f;box-shadow:0 0 0 3px rgba(0,0,0,.3),0 6px 12px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,230,170,.25)}
+.spot .nm{margin-top:-6px;position:relative;z-index:1;padding:2px 9px;border-radius:7px;font-size:11.5px;max-width:110px;background:linear-gradient(#33231a,#1a110a);border:1px solid rgba(216,180,90,.55);color:#f6ecd6;box-shadow:0 2px 5px rgba(0,0,0,.4)}
+.spot .tg{margin-top:2px;font-size:10px;color:rgba(241,212,138,.8);text-shadow:0 1px 1px rgba(0,0,0,.6)}
+.spot.me .av{border-color:#f1d48a;box-shadow:0 0 0 3px rgba(241,212,138,.3),0 0 16px rgba(241,212,138,.45),0 6px 12px rgba(0,0,0,.5)}
+.spot.off .av::after{content:"⚡";position:absolute;font-size:14px;translate:calc(var(--sd, 52px) * .32) calc(var(--sd, 52px) * -.32)}
+.spot.empty .av,.spot.empty.act .av{background:rgba(0,0,0,.22);border:2px dashed rgba(241,212,138,.6);box-shadow:none;color:var(--gold2);font-size:calc(var(--sd, 52px) * .42)}
+.spot.empty .nm,.spot.empty.act .nm{background:rgba(0,0,0,.45);border-style:dashed;color:var(--gold2)}
+.spot.empty.act:hover .av{background:rgba(241,212,138,.14)}
+.lseat .mini{margin-top:3px;font-size:10.5px;padding:2px 8px}
+@media (orientation:portrait) and (max-height:620px){.lseat{width:auto}.spot{--sd:44px;padding:0}.spot .av{font-size:22px}}
+
+/* lobby: the settings are a wooden console, not a form */
+.lctl{padding:8px 12px 10px;border-radius:14px;background:var(--woodgrain) 0 0/320px 100%,linear-gradient(180deg,#6a4122,#3e230f);border:1px solid #2a1607;
+  box-shadow:inset 0 1px 0 rgba(255,220,170,.35),inset 0 -2px 0 rgba(0,0,0,.35),0 8px 18px rgba(0,0,0,.45)}
+.lctl .opt{border-bottom:1px solid rgba(0,0,0,.28);box-shadow:0 1px 0 rgba(255,220,170,.08)}
+.lctl .opt>span{font:italic 600 14px/1.1 var(--serif);color:#f1dcb0;text-shadow:0 1px 0 rgba(0,0,0,.5)}
+.lctl .opt:last-of-type{border-bottom:0;box-shadow:none}
+.lctl .row{margin-top:8px}
+.lctl .wait{color:#f1dcb0}
+/* the start button while seats are empty: clearly not ready, and it says why */
+#lStart:disabled{opacity:1;background:rgba(0,0,0,.28);border:1.5px dashed rgba(241,212,138,.55);box-shadow:none;color:#efe1bd;font-weight:700;text-shadow:none}
+
+/* laptops: the lobby is a lit table under a lamp; the home is the table seen from above */
+@media (orientation:landscape) and (min-width:900px) and (min-height:560px){
+  .lobby{background:radial-gradient(ellipse 46% 40% at 38% 46%,rgba(255,214,140,.16),transparent 70%)}
+  .lobby .lfelt{box-shadow:inset 0 0 0 2px rgba(0,0,0,.35),inset 0 0 50px rgba(0,0,0,.45),0 30px 60px rgba(0,0,0,.65),0 0 120px rgba(255,200,120,.10)}
+  .spot{--sd:66px}.spot .nm{font-size:13.5px}.lfan{--lt:26px}
+  .home{background:none;max-width:none}
+  .home::before{content:"";position:absolute;inset:3vh 5vw 4vh;border-radius:46px;border:22px solid transparent;z-index:0;
+    background:var(--weave) padding-box,var(--grain) padding-box,radial-gradient(ellipse 70% 62% at 50% 40%,var(--felt0),var(--felt) 58%,var(--felt2)) padding-box,
+      var(--woodgrain) 0 0/500px 100% border-box,linear-gradient(140deg,#8a5428 0%,#4d2a10 30%,#7a4520 55%,#3a1f0b 80%,#6b3a18 100%) border-box;
+    box-shadow:inset 0 0 0 2px rgba(0,0,0,.35),inset 0 0 80px rgba(0,0,0,.5),0 30px 60px rgba(0,0,0,.7)}
+  .home>*{position:relative;z-index:1}
+  .hlamp{display:block;position:absolute;inset:0;pointer-events:none;background:radial-gradient(ellipse 40% 38% at 50% 36%,rgba(255,226,160,.16),transparent 72%)}
+  .home .tea{display:block;position:absolute;right:calc(5vw + 34px);top:calc(3vh + 34px);width:38px;height:58px;z-index:2;filter:drop-shadow(0 8px 7px rgba(0,0,0,.55));
+    background:var(--teaimg) center/contain no-repeat}
+  .hrack{display:flex;position:absolute;left:50%;bottom:calc(4vh + 40px);translate:-50% 0;gap:2px;padding:6px 14px 12px;border-radius:8px;opacity:.55;z-index:1;
+    background:var(--woodgrain) 0 0/280px 100%,linear-gradient(180deg,#a36b38,#5e3413);box-shadow:0 8px 16px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,220,170,.4)}
+  .hrack i{width:26px;height:38px;border-radius:4px;background:linear-gradient(168deg,#f8f1de,#dccdaa);box-shadow:0 1px 0 #b9a273}
+  .home .door{background:var(--woodgrain) 0 0/360px 100%,linear-gradient(180deg,#5a3519,#341c0b);border:1px solid #241306;
+    box-shadow:inset 0 1px 0 rgba(255,220,170,.35),0 10px 22px rgba(0,0,0,.5)}
+  .home .doors{max-width:860px}
+  .home .fan{filter:drop-shadow(0 14px 16px rgba(0,0,0,.45))}
+}
+
+/* the lobby table leaves room on every side for the seat plates on its rim */
+.ltable{padding:calc(var(--sd, 52px) * .62) calc(var(--sd, 52px) * .62) calc(var(--sd, 52px) * .9)}
+@media (orientation:landscape) and (max-height:560px){.spot{--sd:42px}.spot .av{font-size:20px}.spot .tg{display:none}.lfan{--lt:14px}}
+@media (orientation:landscape) and (min-width:900px) and (min-height:560px){.lobby .lfelt{max-height:min(100%,460px)}.lvl{font-size:13px}}
+/* short phones: the plaque on one line (code + copy), a tighter console, so the table keeps its size */
+@media (orientation:portrait) and (max-height:700px){
+  .lplacard{display:flex;align-items:center;gap:10px;padding:8px 16px}
+  .lplacard .lp1{flex:1}
+  .lplacard .share{margin:0;padding:0;border:0}
+  .lplacard .share .link{display:none}
+  .ltable{padding:calc(var(--sd, 52px) * .55) calc(var(--sd, 52px) * .6) calc(var(--sd, 52px) * .8)}
+  .lctl{padding:4px 10px 8px}
+  .lctl .opt{padding:5px 0}
+  .lctl .row{margin-top:6px}
+  .lobby{gap:8px}
+}
+
+/* ===================== every state has a look ===================== */
+/* a player who dropped: a greyed plate and a lightning badge; away (auto-play): a dimmed plate and a ⟳ badge */
+.seat.off .plate{opacity:1;filter:grayscale(.85) brightness(.8)}
+.seat.away .plate{opacity:.8}
+.seat.off .av::before,.seat.away .av::before{position:absolute;right:-5px;top:-5px;width:17px;height:17px;border-radius:50%;display:grid;place-items:center;
+  font:800 10px/1 var(--sans);box-shadow:0 1px 3px rgba(0,0,0,.5);z-index:2;filter:none}
+.seat.off .av::before{content:"⚡";background:#3a4a63;color:#ffe08a}
+.seat.away:not(.off) .av::before{content:"⟳";background:#5a4a2a;color:#ffe7b0}
+.av{position:relative}
+/* the clock running out: the ring and the plate's edge turn red and pulse */
+.seat.turn.hurry .plate{border-color:#ff7a5c!important;animation:hurry .9s ease-in-out infinite}
+@keyframes hurry{50%{box-shadow:0 0 0 1.5px rgba(255,122,92,.6),0 0 18px rgba(255,122,92,.45)}}
+@media (prefers-reduced-motion:reduce){.seat.turn.hurry .plate{animation:none}}
+/* the pile running low (8 or fewer): the plate turns amber and the block glows softly */
+.pile.low .pblock{animation:lowpile 2.2s ease-in-out infinite;border-radius:6px}
+@keyframes lowpile{50%{filter:drop-shadow(0 0 6px rgba(255,170,90,.55))}}
+@media (prefers-reduced-motion:reduce){.pile.low .pblock{animation:none}}
+/* a spectator: the empty ıstaka says so */
+.felt.spect .rack::after{content:attr(data-spect);position:absolute;inset:0;display:grid;place-items:center;padding:0 16px;text-align:center;
+  font:italic 14px/1.3 var(--serif);color:rgba(241,212,138,.85);text-shadow:0 1px 2px rgba(0,0,0,.6);pointer-events:none;z-index:2}
+/* labels on the cloth never below 11 px */
+.dlbl,.ind small,.pile small{font-size:11px}
+.ocount,.dn{font-size:11px}
+
+/* laptops: opponents' plates in proportion with the bigger table */
+@media (orientation:landscape) and (min-width:900px) and (min-height:560px){
+  .felt.wide .seat.opp .av,.felt.wide .mine .av{width:46px;height:46px}
+  .felt.wide .seat.opp .av .emo,.felt.wide .mine .av .emo{font-size:24px}
+  .felt.wide .seat.opp .nm,.felt.wide .mine .nm{font-size:14px;max-width:150px}
+  .felt.wide .seat.opp .sc,.felt.wide .mine .sc{font-size:13px}
+  .felt.wide .seat.opp .tag{font-size:12px}
+}
+.pd.p2 .step{height:60px}
+.pd.p3 .step{height:48px;padding-top:6px;gap:2px}
+.pd.p3 .step small{font-size:13px}
+.pd .step{gap:1px}
+/* type floor on the cloth: 11 px */
+.seat .tag,.spot .tg,.felt.tall101 .seat.opp.p2 .tag{font-size:11px}
+.felt.tall101 .seat.opp.p1 .nm,.felt.tall101 .seat.opp.p3 .nm{font-size:11px}
+/* laptops: the lobby is a scene, the lit table on the left, the brass plaque and the console beside it */
+@media (orientation:landscape) and (min-width:900px) and (min-height:560px){
+  .lobby{display:grid;grid-template-columns:minmax(0,1fr) minmax(340px,420px);grid-template-rows:auto 1fr;column-gap:clamp(24px,4vw,64px);row-gap:16px;
+    align-content:center;align-items:start;max-width:1280px;margin:0 auto;width:100%;padding:3vh 4vw}
+  .lobby .ltable{grid-column:1;grid-row:1 / span 2;align-self:center;height:min(76vh,620px);max-width:none}
+  .lobby .lfelt{max-height:100%;max-width:100%}
+  .lobby .lplacard{grid-column:2;grid-row:1;max-width:none}
+  .lobby .lctl{grid-column:2;grid-row:2;max-width:none}
+  .lobby{background:radial-gradient(ellipse 40% 46% at 34% 50%,rgba(255,214,140,.16),transparent 70%)}
+}
+/* compact result rows (landscape phones): your row says "Sen" instead of your name */
+@media (orientation:landscape) and (max-height:520px){.dl.me .nm{display:none}.dl .you{margin:0 2px}}
+@media (orientation:landscape) and (min-width:900px) and (min-height:560px){
+  .lobby{grid-template-rows:1fr 1fr;height:100%}
+  .lobby .lplacard{align-self:end}
+  .lobby .lctl{align-self:start}
 }

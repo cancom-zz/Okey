@@ -9,7 +9,7 @@ import { serve } from './serve.mjs';
 
 const { chromium } = createRequire(import.meta.url)('playwright');
 const SHOTS = join(dirname(fileURLToPath(import.meta.url)), 'shots');
-const SIZES = [[390, 600], [375, 548], [844, 390], [1280, 800]];
+const SIZES = [[390, 600], [375, 548], [844, 390], [1280, 800], [1440, 900]];
 const PORT = 8000 + Math.floor(Math.random() * 900);
 const BASE = `http://localhost:${PORT}`;
 const PROFILE = { name: 'Can', avatar: '🦊', id: 'pw-device-00000001', secret: 'pw-secret-00000001', tip: { play: 0, at: 0, next: 0, went: 0, done: true } };
@@ -160,6 +160,23 @@ async function checkSeats(p, label) {
   if (bad.length) bad.slice(0, 4).forEach(m => fail(`${label}: ${m}`)); else ok(`${label}: opponents clear of the pile, discards and rack`);
 }
 
+// 101: the meld board is a clear panel: no discard, pile, indicator, okey marker, strip or status text on it
+async function checkBoard(p, label) {
+  const bad = await p.evaluate(() => {
+    const m = document.querySelector('#melds:not([hidden])'); if (!m) return [];
+    const b = m.getBoundingClientRect(), out = [];
+    for (const sel of ['.ds .dstack', '.okeyis', '#pile .pblock', '.indt', '#o101:not([hidden])', '.status .stx']) {
+      for (const el of document.querySelectorAll(sel)) {
+        const r = el.getBoundingClientRect(); if (!r.width || !r.height) continue;
+        const ix = Math.min(r.right, b.right) - Math.max(r.left, b.left), iy = Math.min(r.bottom, b.bottom) - Math.max(r.top, b.top);
+        if (ix > 2 && iy > 2) out.push(`${sel} overlaps the meld board`);
+      }
+    }
+    return out;
+  });
+  if (bad.length) bad.slice(0, 4).forEach(m => fail(`${label}: ${m}`)); else ok(`${label}: the meld board is clear`);
+}
+
 const TABLE_SEL = ['.rack .rt', '#pile', '.seat .av', '.ds .dstack', '.bar .chip', '.top .ibtn', '.ind', '.status', '#o101 button', '#melds'];
 
 if (only !== 'e2e' && only !== 'offline') for (const [w, h] of SIZES) {
@@ -221,6 +238,11 @@ if (only !== 'e2e' && only !== 'offline') for (const [w, h] of SIZES) {
   await p.screenshot({ path: join(SHOTS, `t101-${tag}.png`) });
   await checkFit(p, '101 table', TABLE_SEL);
   await checkSeats(p, '101 table');
+  await checkBoard(p, '101 table');
+  if (h > w) {   // portrait phones: meld tiles stay readable
+    const mw = await p.evaluate(() => { const m = document.querySelector('#melds .tile'); return m ? m.getBoundingClientRect().width : 99; });
+    if (mw < 17.5) fail(`101: meld tiles only ${mw.toFixed(1)}px wide`); else ok(`101: meld tiles ${mw < 99 ? mw.toFixed(1) + 'px' : '(none yet)'}`);
+  }
   const tw101 = await p.evaluate(() => document.querySelector('.rack .rt').getBoundingClientRect().width);
   const min101 = h > w ? 28 : 21;   // portrait phones get three tiers so 101 tiles stay big
   if (tw101 < min101) fail(`101: rack tiles only ${tw101.toFixed(1)}px wide (want ≥ ${min101})`); else ok(`101: rack tiles ${tw101.toFixed(1)}px wide`);
@@ -274,7 +296,10 @@ if (only !== 'layout' && only !== 'offline') {
     ok(`101 round ${r + 1} ended: “${story}”`);
     await p.screenshot({ path: join(SHOTS, `e2e101-round${r + 1}.png`) });
     if (stats.took && stats.opened && stats.added) break;
-    await p.click('#rvNext'); await p.clock.runFor(1500);
+    // a match that ended shows the podium over the result: its "Rematch" plays on
+    await p.clock.runFor(3500);
+    if (await p.$('#pdAgain')) await p.click('#pdAgain'); else await p.click('#rvNext');
+    await p.clock.runFor(1500);
   }
   stats.took ? ok('101: took the left discard and put it back') : fail('101: never took and put back a discard');
   stats.opened ? ok(`101: opened ${stats.opened}× with Best opening + Open (laid more ${stats.laid}×)`) : fail('101: never opened in 4 rounds');
