@@ -38,7 +38,7 @@ export const LEVELS = freeze({
     params: freeze({ memory: 0.7, decay: 0.04, lookahead: 3, defense: 0.6, pairsBias: 1, blunder: 0.09,
       takeDiscard: 0.4, gamble: 0.1, speed: 1.0, read: 0.7, bluff: 0 }),
     // 101: opens as soon as it can (no waiting for sets over pairs, no holding), less patient, more slips.
-    params101: freeze({ lookahead: 2, blunder: 0.08, gamble: 0 }),
+    params101: freeze({ lookahead: 2, blunder: 0.125, gamble: 0 }),
   }),
   uzman: freeze({
     id: 'uzman', name: 'Uzman', en: 'Expert',

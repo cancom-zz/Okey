@@ -443,8 +443,8 @@ state in the snapshot), memory and round state. No `Math.random`.
 | `usta` | Usta | 0.7 | 0.04 | 3 | 0.6 | 1 | 0.09 | 0.4 | 0.1 | 1.0 | 0.7 | 0 |
 | `uzman` | Uzman | 0.85 | 0.02 | 4 | 0.85 | 1 | 0.02 | 0.3 | 0.25 | 0.9 | 0.9 | 0.12 |
 
-`params101` (101 only, over `params`): Çırak blunder 0.32 (forgetful, impulsive); Kalfa blunder 0.22; Usta
-lookahead 2, blunder 0.13, gamble 0 (opens as soon as it can, no waiting for sets over pairs, no holding);
+`params101` (101 only, over `params`): Çırak blunder 0.32 (forgetful, impulsive); Kalfa blunder 0.24; Usta
+lookahead 2, blunder 0.125, gamble 0 (opens as soon as it can, no waiting for sets over pairs, no holding);
 Uzman unchanged. This keeps the 101 levels evenly spaced (101 is decided mostly by not opening, so it needs
 wider parameter gaps than classic).
 
@@ -548,12 +548,28 @@ CPU (tested with `process.cpuUsage`, this machine): Uzman `delayMs` + `decide` �
 worst in classic; ≈ 5 ms average, ≈ 110–190 ms worst per 101 step. Budgets asserted: classic < 30 ms average
 and < 150 ms worst; 101 < 60 / < 300 ms. Lower levels are well under 5 ms.
 
-Classic strength (round wins; one bot of each level per table, every level in every seat), 3,200 rounds on
-fresh seeds: Çırak 10.9%, Kalfa 20.7%, Usta 30.2%, **Uzman 35.7%** (two 1,600-round halves: Uzman ahead of
-Usta by 7.6 and 3.3 points). In a duplicate head-to-head (same deals, seats swapped) Uzman takes about 52–53%
-of the Usta/Uzman wins. test/bots.test.mjs plays 240 rounds in 4 worker threads; that is enough for
-Çırak < Kalfa < Usta and Uzman far above Çırak and Kalfa, but Usta vs Uzman needs thousands of rounds, so
-the test only guards that Uzman is not clearly below Usta.
+Classic strength (round wins; one bot of each level per table, every level in every seat; current code with
+taşlamak and the danger model), 3,200 rounds: Çırak 9.9%, Kalfa 21.6%, Usta 27.8%, **Uzman 35.4%** (about
+5.5% of rounds run the pile out: everyone feeds less). In a duplicate head-to-head (same deals, seats
+swapped) Uzman takes about 52–53% of the Usta/Uzman wins. test/bots.test.mjs plays 160 rounds in worker
+threads; that is enough for Çırak < Kalfa < Usta and Uzman far above Çırak and Kalfa, but Usta vs Uzman needs
+thousands of rounds, so the test only guards that Uzman is not clearly below Usta.
+
+Feeding the next player (test/giftsim.mjs: how much a discard improves the next player's true hand, as a
+ratio to a random discard from the same hand; 100 rounds per level, same-level tables):
+
+| level | average gift, before | now | set completions (gift ≥ 2), before | now |
+|---|---|---|---|---|
+| Çırak | 0.98 | 0.98 | 0.91 | 0.91 |
+| Kalfa | 0.99 | 0.94 | 0.93 | 0.78 |
+| Usta | 1.01 | 0.91–0.97 | 1.01 | 0.84–0.89 |
+| Uzman | 1.04 | 0.94 | 1.07 | 0.82 |
+
+"Before" is the old pickups-only defense (inert: switching it off changed nothing; Uzman's efficient
+middle-tile discards fed more than random). The target is set completions, the "really good tiles", at
+about 0.8 of random. The average cannot go much lower from public information: the best public estimate
+over a whole hand (ignoring one's own hand) reaches about 0.78, and among the loose tiles a player actually
+throws about 0.93 (see "Taşlamak").
 
 **101 policy** (`okey101.js`, one action per `decide`; the host calls it again after each step). The view
 adds `round.{table, opened, required, taken}`, `seats[i].handCount` and the public 101 settings
@@ -586,10 +602,10 @@ adds `round.{table, opened, required, taken}`, `seats[i].handCount` and the publ
 - Finish: discarding the last tile (an okey last doubles).
 
 101 strength (penalty points per round, lower is better; one bot of each level per table, every level in
-every seat), 7,200 rounds: Çırak 67.1, Kalfa 57.9, Usta 52.2, **Uzman 50.8**; the engine's auto-play alone
-≈ 115. In a duplicate head-to-head Uzman is 3–9 points per round below Usta. Most of a round's penalty is
-the 202 for not opening (about a quarter of rounds at every level), and the levels open at similar rates
-(Uzman ≈ 76%, Usta ≈ 74%), so 101 separates less than classic. test/bots101.test.mjs (288 rounds, worker
+every seat), 7,200 rounds: Çırak 69.3, Kalfa 62.3, Usta 57.7, **Uzman 52.9**; the engine's auto-play alone
+≈ 115. Head to head (duplicate: same deals, seats swapped, 1,440 seat-rounds each): Kalfa 9.9 below Çırak,
+Usta 5.3 below Kalfa, Uzman 9.2 below Usta. Most of a round's penalty is the 202 for not opening (about a
+quarter of rounds at every level), so 101 needs the wider `params101` gaps. test/bots101.test.mjs (288 rounds, worker
 threads; ±202 swings make small samples noisy) asserts Uzman ≥ 10% below Çırak and below Kalfa, and guards
 that Uzman is not clearly above Usta.
 
