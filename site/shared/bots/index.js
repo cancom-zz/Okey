@@ -31,14 +31,14 @@ export const LEVELS = freeze({
     id: 'kalfa', name: 'Kalfa', en: 'Journeyman',
     params: freeze({ memory: 0.5, decay: 0.07, lookahead: 2, defense: 0.3, pairsBias: 0.95, blunder: 0.12,
       takeDiscard: 0.6, gamble: 0, speed: 1.15, read: 0.3, bluff: 0 }),
-    params101: freeze({ blunder: 0.22 }),
+    params101: freeze({ blunder: 0.24 }),
   }),
   usta: freeze({
     id: 'usta', name: 'Usta', en: 'Master',
     params: freeze({ memory: 0.7, decay: 0.04, lookahead: 3, defense: 0.6, pairsBias: 1, blunder: 0.09,
       takeDiscard: 0.4, gamble: 0.1, speed: 1.0, read: 0.7, bluff: 0 }),
     // 101: opens as soon as it can (no waiting for sets over pairs, no holding), less patient, more slips.
-    params101: freeze({ lookahead: 2, blunder: 0.13, gamble: 0 }),
+    params101: freeze({ lookahead: 2, blunder: 0.08, gamble: 0 }),
   }),
   uzman: freeze({
     id: 'uzman', name: 'Uzman', en: 'Expert',
