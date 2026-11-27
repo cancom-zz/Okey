@@ -481,6 +481,9 @@ function runDir(a, b, okey) {
 // Orient a chain so runs read upward, then insert an empty slot for each one-gap (R6 _ R8, R12 _ R1).
 function layChain(chain, okey) {
   const cmp = byFace(okey);
+  // A gap slot only helps in a one-colour chain (R6 _ R8). In a mixed chain it splits the cluster in two,
+  // so B11 R11 R13 Y13 stays tight (owner, Nov 27).
+  const oneColour = chain.every((id) => faceOf(id, okey).color === faceOf(chain[0], okey).color);
   const dir = chain.slice(1).reduce((s, id, k) => s + runDir(chain[k], id, okey), 0);
   if (dir < 0 || (dir === 0 && chain.length > 1 && cmp(chain[chain.length - 1], chain[0]) < 0)) chain = chain.slice().reverse();
   const out = [chain[0]];
@@ -488,7 +491,7 @@ function layChain(chain, okey) {
     const fa = faceOf(chain[k - 1], okey);
     const fb = faceOf(chain[k], okey);
     const d = (fb.num - fa.num + 13) % 13;
-    if (fa.color === fb.color && (d === 2 || d === 11)) out.push(null); // R6 _ R8, or read downward K8 _ K6
+    if (oneColour && fa.color === fb.color && (d === 2 || d === 11)) out.push(null); // R6 _ R8, or downward K8 _ K6
     out.push(chain[k]);
   }
   return out;

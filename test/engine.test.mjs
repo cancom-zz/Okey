@@ -886,6 +886,10 @@ test('arrangeRack: sets, then near-sets side by side, then singles (Seri diz / Ã
   assert.deepEqual(own.sets, [[T(1, 4), T(1, 5), T(1, 6)]]);
   assert.ok(own.partials.some((c) => JSON.stringify(c) === JSON.stringify([T(2, 13), T(0, 13), T(0, 1), T(3, 1)])), 'B13 R13 R1 K1');
   assert.ok(own.partials.some((c) => JSON.stringify(c) === JSON.stringify([T(0, 6), null, T(0, 8)])), 'R6 _ R8');
+  // a mixed chain stays tight: B11 R11 R13 Y13, no slot for R12 (owner, Nov 27)
+  const mix = arrangeRack([T(2, 11), T(0, 11), T(0, 13), T(1, 13), T(3, 5), T(1, 2)], okey);
+  assert.ok(mix.partials.some((c) => c.length === 4 && !c.includes(null)
+    && JSON.stringify([...c].sort((a, b) => a - b)) === JSON.stringify([T(2, 11), T(0, 11), T(0, 13), T(1, 13)].sort((a, b) => a - b))), 'B11 R11 R13 Y13 tight');
   // twins sit together
   const tw = arrangeRack([tileId(3, 7, 0), tileId(1, 7), tileId(3, 7, 1), tileId(0, 12), tileId(2, 4)], okey);
   const k7 = [tileId(3, 7, 0), tileId(3, 7, 1)];
